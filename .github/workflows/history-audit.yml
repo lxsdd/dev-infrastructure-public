@@ -1,0 +1,42 @@
+name: Public full Git-history security and license audit
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit_git_history.py'
+      - '.github/workflows/history-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: public-history-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  history-audit:
+    name: audit (${{ matrix.repository }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        repository:
+          - foo_dj_library_bridge
+          - foobar2000_component_template
+          - rekordbox-mytag-sync
+          - music-metadata-studio
+          - dj-library-public
+          - foo_smart_tempo-public
+          - gmscore-cast
+          - dj-library
+          - foo_discogger
+          - dev-infrastructure-public
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect every locally obtainable historical Git blob (read-only)
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_LFS_SKIP_SMUDGE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_git_history.py '${{ matrix.repository }}'

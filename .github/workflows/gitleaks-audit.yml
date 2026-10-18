@@ -1,0 +1,38 @@
+name: Independent historical secrets audit (Gitleaks)
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit_gitleaks.py'
+      - '.github/workflows/gitleaks-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  secret-audit:
+    name: gitleaks (${{ matrix.repository }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        repository:
+          - foo_dj_library_bridge
+          - foobar2000_component_template
+          - rekordbox-mytag-sync
+          - music-metadata-studio
+          - dj-library-public
+          - foo_smart_tempo-public
+          - gmscore-cast
+          - dj-library
+          - foo_discogger
+          - dev-infrastructure-public
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pinned and checksum-verified Gitleaks against all Git refs
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_gitleaks.py '${{ matrix.repository }}'

@@ -1,0 +1,22 @@
+name: GmsCore inherited credential fingerprint triage
+on:
+  pull_request:
+    paths:
+      - 'scripts/triage_gmscore.py'
+      - '.github/workflows/history-triage.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  triage:
+    name: Compare Android credentials with upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare redacted public source fingerprints
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          python3 scripts/triage_gmscore.py

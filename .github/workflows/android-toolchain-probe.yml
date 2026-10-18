@@ -1,0 +1,25 @@
+name: Android toolchain probe (public, no private source)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Inspect hosted Android toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "OS=$RUNNER_OS"
+          java -version
+          test -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          test -d "$SDK/platforms"
+          test -d "$SDK/build-tools"
+          find "$SDK/platforms" -maxdepth 1 -type d -name 'android-*' -printf '%f\n' | sort
+          find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+          echo 'ANDROID_TOOLCHAIN_PROBE=PASS'
+      - name: Security boundary
+        run: echo 'No private repository checkout, no private credentials, no proprietary artifacts.'

@@ -17,6 +17,8 @@ jobs:
           set -euo pipefail
           echo "OS=$RUNNER_OS"
           java -version
+          test -d "${JAVA_HOME_21_X64:-/nonexistent}" || { echo 'JDK21_NOT_PREINSTALLED'; exit 1; }
+          "${JAVA_HOME_21_X64}/bin/java" -version
           test -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
           test -d "$SDK/platforms"

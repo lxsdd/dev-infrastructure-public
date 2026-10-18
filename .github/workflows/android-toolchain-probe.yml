@@ -19,6 +19,8 @@ jobs:
           java -version
           test -d "${JAVA_HOME_21_X64:-/nonexistent}" || { echo 'JDK21_NOT_PREINSTALLED'; exit 1; }
           "${JAVA_HOME_21_X64}/bin/java" -version
+          test -x "${JAVA_HOME_21_X64}/bin/javac"
+          "${JAVA_HOME_21_X64}/bin/javac" -version
           test -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
           test -d "$SDK/platforms"

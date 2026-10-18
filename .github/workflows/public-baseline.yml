@@ -2,16 +2,14 @@ name: Public infrastructure baseline
 on:
   push:
     branches:
-      - experiment/public-ci-foundation-20261018
+      - main
     paths:
       - 'PUBLIC_SCOPE.md'
       - 'tests/**'
       - '.github/workflows/public-baseline.yml'
   pull_request:
-    paths:
-      - 'PUBLIC_SCOPE.md'
-      - 'tests/**'
-      - '.github/workflows/public-baseline.yml'
+    branches:
+      - main
 permissions:
   contents: read
 jobs:

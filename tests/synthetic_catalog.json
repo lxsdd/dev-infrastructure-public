@@ -1,0 +1,21 @@
+{
+  "synthetic": true,
+  "schema_version": 1,
+  "tracks": [
+    {
+      "id": "S001",
+      "title": "Synthetic Alpha",
+      "artist": "Fixture Artist A"
+    },
+    {
+      "id": "S002",
+      "title": "Synthetic Beta",
+      "artist": "Fixture Artist B"
+    },
+    {
+      "id": "S003",
+      "title": "Synthetic Gamma",
+      "artist": "Fixture Artist C"
+    }
+  ]
+}

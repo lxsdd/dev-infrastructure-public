@@ -19,7 +19,7 @@ ALLOW = {
     "foo_dj_library_bridge", "foobar2000_component_template",
     "rekordbox-mytag-sync", "music-metadata-studio",
     "dj-library-public", "foo_smart_tempo-public", "gmscore-cast",
-    "dj-library", "foo_discogger", "dev-infrastructure-public",
+    "dj-library", "foo_discogger", "dev-infrastructure-public", "foo_metadata_isolation-public",
 }
 if REPO not in ALLOW:
     raise SystemExit("Repository must be a known public audit target")

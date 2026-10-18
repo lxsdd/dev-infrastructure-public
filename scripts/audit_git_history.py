@@ -138,10 +138,18 @@ def audit(root):
             size=int(header[2])
             if size!=declared_size:
                 raise RuntimeError("Inconsistent Git blob length")
-            raw=cat.stdout.read(size)
+            pieces=[]
+            remaining=size
+            while remaining:
+                chunk=cat.stdout.read(min(remaining, 1024*1024))
+                if not chunk:
+                    raise RuntimeError("Incomplete historical blob read")
+                pieces.append(chunk)
+                remaining-=len(chunk)
+            raw=b"".join(pieces)
             delim=cat.stdout.read(1)
-            if len(raw)!=size or delim!=b"\n":
-                raise RuntimeError("Incomplete historical blob read")
+            if delim!=b"\n":
+                raise RuntimeError("Incomplete historical blob delimiter")
             bytes_total+=size
             total+=1
             path=paths.get(sha,sha)

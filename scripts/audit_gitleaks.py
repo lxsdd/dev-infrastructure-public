@@ -11,7 +11,7 @@ from pathlib import Path
 
 REPOS={"foo_dj_library_bridge","foobar2000_component_template","rekordbox-mytag-sync",
 "music-metadata-studio","dj-library-public","foo_smart_tempo-public","gmscore-cast",
-"dj-library","foo_discogger","dev-infrastructure-public"}
+"dj-library","foo_discogger","dev-infrastructure-public","foo_metadata_isolation-public"}
 VERSION="8.30.1"
 SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 

@@ -28,5 +28,23 @@ jobs:
           find "$SDK/platforms" -maxdepth 1 -type d -name 'android-*' -printf '%f\n' | sort
           find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
           echo 'ANDROID_TOOLCHAIN_PROBE=PASS'
+      - name: Verify pinned Gradle 9.7.1 and public Android Gradle Plugin 9.1.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="${JAVA_HOME_21_X64}"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          mkdir -p "$RUNNER_TEMP/gradle-probe"
+          cd "$RUNNER_TEMP/gradle-probe"
+          curl --fail --location --silent --show-error --retry 2 --output gradle.zip https://services.gradle.org/distributions/gradle-9.7.1-bin.zip
+          echo 'acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a  gradle.zip' | sha256sum --check
+          unzip -q gradle.zip
+          ./gradle-9.7.1/bin/gradle --version
+          mkdir project
+          cd project
+          printf 'pluginManagement { repositories { google(); gradlePluginPortal(); mavenCentral() } }\nrootProject.name = "public-agp-probe"\n' > settings.gradle.kts
+          printf 'plugins { id("com.android.library") version "9.1.0" apply false }\n' > build.gradle.kts
+          ../gradle-9.7.1/bin/gradle help --no-daemon --no-build-cache --stacktrace
+          echo 'PUBLIC_GRADLE_AGP_RESOLUTION=PASS'
       - name: Security boundary
         run: echo 'No private repository checkout, no private credentials, no proprietary artifacts.'

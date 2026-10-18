@@ -1,0 +1,26 @@
+name: Audit full public Git history (read-only)
+
+on:
+  pull_request:
+    paths:
+      - 'audit/scan_public_git_history.py'
+      - '.github/workflows/public-history-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-public-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Python audit parser
+        run: python3 -m py_compile audit/scan_public_git_history.py
+      - name: Scan all ten public repositories and all reachable historical blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          python3 -u audit/scan_public_git_history.py

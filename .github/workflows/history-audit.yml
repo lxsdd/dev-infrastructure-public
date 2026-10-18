@@ -30,6 +30,7 @@ jobs:
           - dj-library
           - foo_discogger
           - dev-infrastructure-public
+          - foo_metadata_isolation-public
     steps:
       - uses: actions/checkout@v4
       - name: Inspect every locally obtainable historical Git blob (read-only)

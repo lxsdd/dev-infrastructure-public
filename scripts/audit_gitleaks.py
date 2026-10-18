@@ -43,10 +43,23 @@ def audit(repo):
         matches=json.loads(report.read_text("utf-8"))
         if not isinstance(matches,list):raise RuntimeError("Unexpected Gitleaks report shape")
         rules=collections.Counter(str(x.get("RuleID","unknown")) for x in matches)
-        # No matching line, file name, author, secret or match is ever printed or retained.
+        samples=[]
+        for finding in matches[:40]:
+            original=str(finding.get("Secret",""))
+            filepath=str(finding.get("File",""))
+            samples.append({
+                "rule":str(finding.get("RuleID","unknown")),
+                "path_hash":hashlib.sha256(filepath.encode("utf-8","replace")).hexdigest()[:12],
+                "line":finding.get("StartLine"),
+                "commit_prefix":str(finding.get("Commit",""))[:12],
+                "secret_digest":hashlib.sha256(original.encode("utf-8","replace")).hexdigest()[:12],
+                "secret_length":len(original),
+                "test_file":any(p in filepath.lower() for p in ("/test/","/tests/","test_",".test.","fixture","sample","example"))
+            })
+        # Secrets, matching lines, file names and author metadata never enter public logs.
         return {"repository":repo,"version":VERSION,"method":"gitleaks git --all",
-                "findings":len(matches),"rules":dict(sorted(rules.items())),"completed":True,
-                "included_pr_refs":True}
+                "findings":len(matches),"rules":dict(sorted(rules.items())),
+                "redacted_findings":samples,"completed":True,"included_pr_refs":True}
 
 if __name__=="__main__":
     try:

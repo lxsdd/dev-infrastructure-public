@@ -1,5 +1,8 @@
 name: Android toolchain probe (public, no private source)
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/android-toolchain-probe.yml'
   workflow_dispatch:
 permissions:
   contents: read

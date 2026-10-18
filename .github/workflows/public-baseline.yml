@@ -1,0 +1,26 @@
+name: Public infrastructure baseline
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'PUBLIC_SCOPE.md'
+      - 'tests/**'
+      - '.github/workflows/public-baseline.yml'
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  synthetic-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check public safety contract and synthetic fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s PUBLIC_SCOPE.md
+          python3 tests/check_fixture.py

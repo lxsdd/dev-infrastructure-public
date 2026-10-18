@@ -35,13 +35,13 @@ def analyze(root,include_history):
         main_tree=run(["git","ls-tree","-r","--format=%(objectname)","refs/heads/main"],target).decode().splitlines()
         main_blobs=set(main_tree)
     else:
-        target=Path(root)/"upstream"
-        subprocess.run(["git","clone","--depth=1","--quiet","https://github.com/MorpheApp/MicroG-RE.git",str(target)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=1000)
-        objects=run(["git","ls-tree","-r","--long","HEAD"],target).decode().splitlines()
-        entries=[(r.split()[2],int(r.split()[3]),r.split("\t",1)[1]) for r in objects if r.split()[1]=="blob" and r.split()[3].isdigit()]
-        names={s:n for s,z,n in entries}
-        objects=[s+" blob "+str(z) for s,z,n in entries]
-        main_blobs=set(names)
+        target=Path(root)/"upstream.git"
+        subprocess.run(["git","clone","--mirror","--quiet","https://github.com/MorpheApp/MicroG-RE.git",str(target)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=1000)
+        objects=run(["git","cat-file","--batch-all-objects","--batch-check=%(objectname) %(objecttype) %(objectsize)"],target).decode().splitlines()
+        rev=run(["git","rev-list","--objects","--all"],target).decode("utf-8","replace").splitlines()
+        names={r.split(" ",1)[0]:r.split(" ",1)[1] for r in rev if " " in r}
+        main_tree=run(["git","ls-tree","-r","--format=%(objectname)","refs/heads/main"],target).decode().splitlines()
+        main_blobs=set(main_tree)
     fp=collections.defaultdict(set)
     hist=collections.defaultdict(lambda:collections.Counter())
     path_counts=collections.Counter()
@@ -90,10 +90,10 @@ def main():
             "historical_occurrences":data["occurrences"],
             "current_head_occurrences":data["existing_at_head_occurrences"],
             "test_path_occurrences":data["test_or_sample_path_occurrences"],
-            "known_id_prefixes_in_parent_head":len(candidates & upstream_ids),
+            "identifiers_in_parent_full_git_history":len(candidates & upstream_ids),
             "reported_identifier_prefixes":len(candidates)
         }
-    print("GMSCORE_TRIAGE_JSON="+json.dumps({"repository":"gmscore-cast","credentials":output,"path_pattern_occurrences":paths,"comparison":"MorpheApp/MicroG-RE HEAD only; no raw secrets printed"},sort_keys=True,separators=(",",":")))
+    print("GMSCORE_TRIAGE_JSON="+json.dumps({"repository":"gmscore-cast","credentials":output,"path_pattern_occurrences":paths,"comparison":"MorpheApp/MicroG-RE reachable historical Git objects; no raw secrets printed"},sort_keys=True,separators=(",",":")))
 
 if __name__=="__main__":
     try:main()

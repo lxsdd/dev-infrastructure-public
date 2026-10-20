@@ -1,0 +1,138 @@
+name: Shared PR HEAD CI dispatch
+
+# Called by an opt-in public repository with its own short-lived token.
+on:
+  workflow_call:
+    inputs:
+      pr_numbers:
+        description: "Comma-separated, explicitly reviewed PR numbers (max 5)"
+        required: true
+        type: string
+      workflow_files:
+        description: "Comma-separated, allowlisted CI workflow basenames (max 3)"
+        required: true
+        type: string
+      base_branch:
+        required: false
+        type: string
+        default: main
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
+
+concurrency:
+  group: guarded-pr-head-ci-${{ github.repository }}-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Dispatch missing exact-HEAD checks for selected same-repository PRs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBERS: ${{ inputs.pr_numbers }}
+          WORKFLOW_FILES: ${{ inputs.workflow_files }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          base_branch = os.environ['BASE_BRANCH']
+          pr_texts = [v.strip() for v in os.environ['PR_NUMBERS'].split(',')]
+          names = [v.strip() for v in os.environ['WORKFLOW_FILES'].split(',')]
+
+          allowed = {
+              'ci.yml', 'foobar.yml', 'fast.yml', 'windows.yml', 'build.yml',
+              'source.yml', 'validation.yml', 'migration.yml'
+          }
+          if not (1 <= len(pr_texts) <= 5 and len(set(pr_texts)) == len(pr_texts)
+                  and all(re.fullmatch(r'[1-9][0-9]{0,6}', p) for p in pr_texts)):
+              raise SystemExit('REJECT: invalid or repeated PR number (max 5)')
+          if not (1 <= len(names) <= 3 and len(set(names)) == len(names)
+                  and all(name in allowed for name in names)):
+              raise SystemExit('REJECT: workflow must be explicitly CI-allowlisted')
+          if not re.fullmatch(r'[a-zA-Z0-9_.-]{1,64}', base_branch):
+              raise SystemExit('REJECT: unsupported base branch syntax')
+
+          api = 'https://api.github.com/repos/' + repository
+          headers = {
+              'Authorization': 'Bearer ' + token,
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'guarded-pr-head-ci',
+          }
+          def request(method, path, data=None):
+              payload = None if data is None else json.dumps(data).encode('utf-8')
+              req = urllib.request.Request(api + '/' + path,
+                  data=payload, headers=headers, method=method)
+              if payload is not None:
+                  req.add_header('Content-Type', 'application/json')
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  body = response.read()
+              return json.loads(body) if body else None
+
+          metadata = request('GET', '')
+          if metadata.get('private') is not False:
+              print('SKIP: no private repository runner minutes.')
+              raise SystemExit(0)
+
+          for file in names:
+              workflow = request('GET', 'actions/workflows/' + file)
+              if (workflow.get('state') != 'active' or
+                  workflow.get('path') != '.github/workflows/' + file):
+                  raise RuntimeError('REJECT: missing/default-branch-disabled CI ' + file)
+
+          handled = set()
+          for pr_text in pr_texts:
+              pr = request('GET', 'pulls/' + pr_text)
+              head = pr.get('head') or {}
+              origin = head.get('repo') or {}
+              if not (pr.get('state') == 'open' and
+                      (pr.get('base') or {}).get('ref') == base_branch and
+                      origin.get('full_name') == repository):
+                  print('SKIP: closed, foreign or wrong-base PR #' + pr_text)
+                  continue
+
+              branch = head.get('ref', '')
+              sha = head.get('sha', '')
+              if not (re.fullmatch(r'[0-9a-f]{40}', sha) and
+                      re.fullmatch(r'[a-zA-Z0-9_./-]{1,180}', branch) and
+                      '..' not in branch and not branch.startswith('/')):
+                  raise RuntimeError('REJECT: invalid PR head ref')
+
+              branch_endpoint = 'branches/' + urllib.parse.quote(branch, safe='')
+              current = (request('GET', branch_endpoint).get('commit') or {}).get('sha')
+              if current != sha:
+                  print('SKIP: PR changed before evaluation: ' + pr_text)
+                  continue
+
+              for file in names:
+                  key = (file, sha)
+                  if key in handled:
+                      continue
+                  existing = request('GET', 'actions/workflows/' + file + '/runs?' +
+                      urllib.parse.urlencode({'head_sha': sha, 'per_page': 5}))
+                  if existing.get('total_count', 0) > 0:
+                      print('SKIP: existing CI ' + file + ' for ' + sha[:12])
+                      handled.add(key)
+                      continue
+                  fresh = (request('GET', branch_endpoint).get('commit') or {}).get('sha')
+                  if fresh != sha:
+                      print('SKIP: updated during evaluation: ' + pr_text)
+                      break
+                  request('POST', 'actions/workflows/' + file + '/dispatches',
+                          {'ref': branch})
+                  handled.add(key)
+                  print('DISPATCH: PR #' + pr_text + ' ' + file + ' ' + sha[:12])
+          PY

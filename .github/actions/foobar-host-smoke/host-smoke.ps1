@@ -3,6 +3,8 @@
 param(
   [Parameter(Mandatory)][ValidateSet('Win32','x64')][string]$Architecture,
   [string]$ComponentDll = '',
+  [string]$ContextCommand = '',
+  [string]$ExpectedWindowTitle = '',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -124,6 +126,18 @@ try {
       try { if (-not $cueDispatch.HasExited) { Stop-Process -Id $cueDispatch.Id -Force -ErrorAction Stop } }
       catch { Write-Warning 'Could not stop disposable CUE /add launcher.' }
     }
+  }
+  if ($ContextCommand -ne '') {
+    if ([string]::IsNullOrWhiteSpace($ExpectedWindowTitle) -or -not $ComponentDll) {
+      throw 'Context smoke requires both a component DLL and expected result title.'
+    }
+    & (Join-Path $PSScriptRoot 'context-command-smoke.ps1') `
+      -Exe $exe -WorkingDirectory $target -HostProcessId $proc.Id `
+      -Command $ContextCommand -ExpectedWindowTitle $ExpectedWindowTitle `
+      -FixturePaths @($fixture, $cue)
+    Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+    Assert-FoobarFixtureUnchanged -Path $cue -Before $cueBefore
+    Write-Host "CONTEXT_COMMAND_NO_WRITE_$Architecture=PASS"
   }
   Write-Host "HOST_BOOT_$Architecture=PASS"
   if ($expected) { Write-Host "COMPONENT_LOAD_$Architecture=PASS" }

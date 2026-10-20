@@ -202,6 +202,83 @@ try {
         }
     }
     Write-Host 'PRODUCTION_WPF_UNSAFE_ACTIONS_DISABLED=PASS'
+    # Additional real workflow surfaces: selection only, never invoke or type
+    # into the production controls. The empty temporary profile is retained.
+    foreach ($page in @(
+        @{ Tab='Mapping'; Tag='MAPPING'; IDs=@('MappingGrid','AddMappingButton','RemoveMappingButton') },
+        @{ Tab='Diagnostics / Logs'; Tag='DIAGNOSTICS'; IDs=@('RefreshDiagnosticsButton','DiagnosticsTextBox') }
+    )) {
+        $tabQuery = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, $page.Tab)
+        $tabItems = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabQuery) |
+            Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem' })
+        if ($tabItems.Count -ne 1) { throw ('Real WPF tab not unique: ' + $page.Tag) }
+        $pattern = [System.Windows.Automation.SelectionItemPattern]$tabItems[0].GetCurrentPattern(
+            [System.Windows.Automation.SelectionItemPattern]::Pattern)
+        $pattern.Select()
+        Start-Sleep -Milliseconds 160
+        if (-not $pattern.Current.IsSelected) { throw ('WPF tab not selected: ' + $page.Tag) }
+        $checked = Test-WindowsUiAccessibility -WindowHandle $handle -RequiredAutomationIds ([string[]]$page.IDs)
+        if (-not $checked.Passed) {
+            throw ('Visible ' + $page.Tag + ' controls failed: ' + ($checked.Issues -join ','))
+        }
+        Write-Host ('PRODUCTION_WPF_TAB_' + $page.Tag + '_UIA=PASS')
+    }
+
+    # The Preview page contains a second real WPF TabControl; all three
+    # subpages must actually expose their own content (not merely exist in XAML).
+    $previewCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty, 'Preview / Changes')
+    $previewTabs = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $previewCondition) |
+        Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem' })
+    if ($previewTabs.Count -ne 1) { throw 'Preview parent tab not unique.' }
+    $previewPattern = [System.Windows.Automation.SelectionItemPattern]$previewTabs[0].GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $previewPattern.Select()
+    Start-Sleep -Milliseconds 150
+    foreach ($subPage in @(
+        @{ Tab='MyTag changes / conflicts'; Tag='CHANGES'; IDs=@('PreviewGrid') },
+        @{ Tab='Investigate excluded tracks / MyTags'; Tag='EXCLUSIONS'; IDs=@('PreviewInvestigationGrid') },
+        @{ Tab='Physical exceptions (8)'; Tag='PHYSICAL_EXCEPTIONS'; IDs=@('PhysicalExceptionsGrid','InvestigatePhysicalExceptionsButton','ExportPhysicalExceptionsButton') }
+    )) {
+        $subCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, $subPage.Tab)
+        $subTabs = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $subCondition) |
+            Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem' })
+        if ($subTabs.Count -ne 1) { throw ('Preview subtab not unique: ' + $subPage.Tag) }
+        $subPattern = [System.Windows.Automation.SelectionItemPattern]$subTabs[0].GetCurrentPattern(
+            [System.Windows.Automation.SelectionItemPattern]::Pattern)
+        $subPattern.Select()
+        Start-Sleep -Milliseconds 170
+        if (-not $subPattern.Current.IsSelected) { throw ('Preview subtab not selected: ' + $subPage.Tag) }
+        $subChecked = Test-WindowsUiAccessibility -WindowHandle $handle -RequiredAutomationIds ([string[]]$subPage.IDs)
+        if (-not $subChecked.Passed) {
+            throw ('Preview subtab ' + $subPage.Tag + ' not visible: ' + ($subChecked.Issues -join ','))
+        }
+        if ($subPage.Tag -eq 'PHYSICAL_EXCEPTIONS') {
+            $exportQuery = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'ExportPhysicalExceptionsButton')
+            $export = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $exportQuery)
+            if ($null -eq $export -or $export.Current.IsEnabled) {
+                throw 'Unsafe physical exception CSV export is enabled without inspection.'
+            }
+            Write-Host 'PRODUCTION_WPF_UNQUALIFIED_CSV_EXPORT_DISABLED=PASS'
+        }
+        Write-Host ('PRODUCTION_WPF_PREVIEW_SUBTAB_' + $subPage.Tag + '=PASS')
+    }
+    # Return to the write-safety tab and assert the gate still holds after
+    # exercising the other navigation pages. Never enter consent or invoke.
+    $applySelection.Select()
+    Start-Sleep -Milliseconds 150
+    foreach ($id in @('ApplyButton','RestoreButton')) {
+        $condition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
+        $action = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+        if ($null -eq $action -or $action.Current.IsEnabled) {
+            throw ('Unsafe write action became enabled after navigation: ' + $id)
+        }
+    }
+    Write-Host 'PRODUCTION_WPF_UNSAFE_ACTIONS_STAY_DISABLED_AFTER_NAVIGATION=PASS'
     # Resize the actual WPF MainWindow, not a synthetic font or OS DPI.
     # Only select Source; no search, inspection, previews or writes.
     $sourceQuery = [System.Windows.Automation.PropertyCondition]::new(

@@ -637,6 +637,31 @@ FILE "synthetic-8k-silence.wav" WAVE
       } finally {
         Set-Clipboard -Value '' -ErrorAction SilentlyContinue
       }
+      # After the byte/timestamp PASS: mutate only the disposable FLAC.
+      # This must invalidate the physical backing source even if foobar
+      # exposes a virtual subsong whose cached metadata is unchanged.
+      $file=[IO.File]::Open($flac,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,
+                            [IO.FileShare]::ReadWrite)
+      try {
+        $null=$file.Seek(-1,[IO.SeekOrigin]::End)
+        $value=$file.ReadByte()
+        $null=$file.Seek(-1,[IO.SeekOrigin]::End)
+        $file.WriteByte([byte]($value -bxor 1))
+      } finally {$file.Dispose()}
+      [IO.File]::SetLastWriteTimeUtc($flac,([DateTime]::UtcNow).AddMinutes(4))
+      try {
+        Set-Clipboard -Value $flacEdition -ErrorAction Stop
+        if(-not [FoobarHostWindow]::Click($flacWindow,$ClipboardButtonId)) {
+          throw 'Could not activate actual native embedded-CUE stale-check action.'
+        }
+        Start-Sleep -Milliseconds 240
+        $title=[FoobarHostWindow]::Text($flacWindow,0)
+        if($title -ne 'Music Metadata Studio - STALE snapshot (Read-only)' -or
+           [FoobarHostWindow]::Enabled($flacWindow,$ClipboardButtonId)) {
+          throw "Embedded FLAC source mutation did not lock the workspace ($title)."
+        }
+        Write-Host "HOST_EMBEDDED_FLAC_STALE_LOCKDOWN_$Architecture=PASS (disposable FLAC only)"
+      } finally {Set-Clipboard -Value '' -ErrorAction SilentlyContinue}
       if(-not [FoobarHostWindow]::Close($flacWindow)) {
         throw 'Native embedded FLAC workspace did not close.'
       }

@@ -56,14 +56,34 @@ def main(path):
     # Subframe: constant (0000000), sample value 0, 16-bit; CRC16.
     frame = frame_head + bytes(3)
     frame += struct.pack(">H",crc(frame,16,0x8005))
-    data = b"fLaC" + block(0,stream_info) + block(4,comments,last=True) + frame
+    # FLAC Type-5 is a distinct BINARY metadata block. Preserve it byte
+    # for byte independently of the textual Vorbis-comment CUESHEET.
+    # 3 entries: physical tracks 1/2 and mandatory lead-out track 170.
+    def track(offset, number, indices):
+        payload = (
+            offset.to_bytes(8,"big") + bytes([number]) + bytes(12) +
+            bytes(1) + bytes(13) + bytes([len(indices)])
+        )
+        for index_offset,index_number in indices:
+            payload += (index_offset.to_bytes(8,"big") +
+                        bytes([index_number]) + bytes(3))
+        return payload
+    native_type5 = (
+        bytes(128) + bytes(8) + bytes(1) + bytes(258) + bytes([3]) +
+        track(0,1,[(0,1)]) + track(3200,2,[(0,1)]) +
+        track(samples,170,[])
+    )
+    # This exact canonical 3-track Type-5 block was validated with
+    # the reference FLAC 1.5.0 decoder and metaflac metadata parser.
+    data = (b"fLaC" + block(0,stream_info) + block(5,native_type5) +
+            block(4,comments,last=True) + frame)
     target = Path(path)
     if target.exists():
         raise SystemExit("Refuse to overwrite an existing audio fixture.")
     target.write_bytes(data)
     if len(data) > 4096 or data.count(entry) != 1 or data[:4] != b"fLaC":
         raise SystemExit("Invalid synthetic FLAC fixture.")
-    print("SYNTHETIC_EMBEDDED_FLAC_CREATED=PASS")
+    print("SYNTHETIC_EMBEDDED_FLAC_CREATED=PASS (text CUESHEET plus native Type-5 block)")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

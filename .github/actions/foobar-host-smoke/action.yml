@@ -48,6 +48,10 @@ inputs:
     required: false
     description: "Single allowlisted public release ID; never a URL or credential"
     default: "38012673"
+  external-cue-host-probe:
+    required: false
+    description: "Opt-in disposable WAV plus external text CUE; run real native Inspect CUE and offline edition compare"
+    default: "false"
 runs:
   using: composite
   steps:
@@ -64,8 +68,9 @@ runs:
         FB2K_CLIPBOARD_BUTTON_ID: ${{ inputs.clipboard-button-id }}
         FB2K_CLIPBOARD_LIST_ID: ${{ inputs.clipboard-list-id }}
         FB2K_BEATPORT_EDITION_PROBE: ${{ inputs.beatport-edition-host-probe }}
+        FB2K_EXTERNAL_CUE_PROBE: ${{ inputs.external-cue-host-probe }}
         FB2K_STALE_PHYSICAL_PROBE: ${{ inputs.stale-physical-host-probe }}
         FB2K_AUTHORIZED_DISCOGS_PROBE: ${{ inputs.authorized-discogs-probe }}
         FB2K_DISCOGS_RELEASE_ID: ${{ inputs.discogs-release-id }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -OfflineClipboardTest $env:FB2K_OFFLINE_CLIPBOARD_TEST -ClipboardButtonId ([int]$env:FB2K_CLIPBOARD_BUTTON_ID) -ClipboardListId ([int]$env:FB2K_CLIPBOARD_LIST_ID) -BeatportEditionProbe ($env:FB2K_BEATPORT_EDITION_PROBE -eq 'true') -StalePhysicalProbe ($env:FB2K_STALE_PHYSICAL_PROBE -eq 'true') -AuthorizedDiscogsProbe ($env:FB2K_AUTHORIZED_DISCOGS_PROBE -eq 'true') -DiscogsReleaseId $env:FB2K_DISCOGS_RELEASE_ID
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -OfflineClipboardTest $env:FB2K_OFFLINE_CLIPBOARD_TEST -ClipboardButtonId ([int]$env:FB2K_CLIPBOARD_BUTTON_ID) -ClipboardListId ([int]$env:FB2K_CLIPBOARD_LIST_ID) -BeatportEditionProbe ($env:FB2K_BEATPORT_EDITION_PROBE -eq 'true') -ExternalCueProbe ($env:FB2K_EXTERNAL_CUE_PROBE -eq 'true') -StalePhysicalProbe ($env:FB2K_STALE_PHYSICAL_PROBE -eq 'true') -AuthorizedDiscogsProbe ($env:FB2K_AUTHORIZED_DISCOGS_PROBE -eq 'true') -DiscogsReleaseId $env:FB2K_DISCOGS_RELEASE_ID

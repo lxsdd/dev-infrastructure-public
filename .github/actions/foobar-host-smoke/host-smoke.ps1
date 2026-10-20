@@ -10,6 +10,7 @@ param(
   [int]$ClipboardButtonId = 0,
   [int]$ClipboardListId = 0,
   [bool]$BeatportEditionProbe = $false,
+  [bool]$ExternalCueProbe = $false,
   [bool]$StalePhysicalProbe = $false,
   [bool]$AuthorizedDiscogsProbe = $false,
   [string]$DiscogsReleaseId = '38012673',
@@ -70,6 +71,10 @@ public static class FoobarHostWindow {
     return windows.ToArray();
   }
   [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr h);
+  public static bool Close(IntPtr hwnd) {
+    IntPtr result;
+    return SendMessageTimeoutW(hwnd,0x0010,IntPtr.Zero,IntPtr.Zero,2,5000,out result)!=IntPtr.Zero;
+  }
   public static bool Click(IntPtr dialog,int id) {
     var control=GetDlgItem(dialog,id);
     if(control==IntPtr.Zero || !IsWindowEnabled(control) || !IsWindowVisible(control)) return false;
@@ -412,6 +417,122 @@ try {
     Write-Host "HOST_WORKSPACE_REUSE_$Architecture=PASS"
     Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
     Write-Host "HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED_$Architecture=PASS"
+    if($ExternalCueProbe) {
+      if(-not $BeatportEditionProbe -or $ClipboardButtonId -le 0 -or
+         $ClipboardListId -le 0 -or -not $ContextCommand) {
+        throw 'External CUE host probe requires earlier read-only Beatport native test.'
+      }
+      # Two synthetic tracks share ONE disposable physical WAV. Foobar
+      # enumerates the CUE virtual tracks; only exact original CUE bytes are
+      # opened for inspection and the source itself is NEVER a write target.
+      $cuePath=Join-Path $dir 'synthetic-edition.cue'
+      $cueText=@'
+TITLE "Runner EP"
+PERFORMER "Example DJ"
+REM GENRE "House"
+REM GENRE "Progressive Trance"
+REM CUSTOM "Never replace"
+FILE "synthetic-8k-silence.wav" WAVE
+  TRACK 01 AUDIO
+    TITLE "Runner (Extended Mix)"
+    PERFORMER "Example DJ"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Runner (Radio Edit)"
+    PERFORMER "Example DJ"
+    INDEX 01 00:00:30
+'@
+      [IO.File]::WriteAllText($cuePath,$cueText,([Text.UTF8Encoding]::new($false)))
+      $cueBefore=Get-FoobarFixtureSnapshot -Path $cuePath
+      if(-not [FoobarHostWindow]::Close($window)) {
+        throw 'Cannot close the existing modeless workspace before CUE test.'
+      }
+      for($i=0;$i -lt 20;$i++) {
+        Start-Sleep -Milliseconds 200
+        if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -eq 0) { break }
+      }
+      if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -ne 0) {
+        throw 'Modeless workspace did not close before external CUE selection.'
+      }
+      $cueDispatch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList @('/add','/immediate',$cuePath) -PassThru
+      if(-not $cueDispatch.WaitForExit(15000) -or $cueDispatch.ExitCode -ne 0) {
+        throw 'Host cannot load synthetic external CUE.'
+      }
+      $leaf=($ContextCommand -split '/')[-1]
+      $cueArg='/context_command:"'+$leaf+'" "'+$cuePath+'"'
+      $cueForward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $cueArg -PassThru
+      if(-not $cueForward.WaitForExit(15000) -or $cueForward.ExitCode -ne 0) {
+        throw 'External CUE context command refused by host.'
+      }
+      $cueWindow=[IntPtr]::Zero
+      for($i=0;$i -lt 36;$i++) {
+        Start-Sleep -Milliseconds 500
+        $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+        if($found.Length -gt 1) { throw 'More than one native CUE workspace opened.' }
+        if($found.Length -eq 1) { $cueWindow=$found[0]; break }
+      }
+      if($cueWindow -eq [IntPtr]::Zero) {
+        throw 'External CUE context selection did not open the actual native Studio.'
+      }
+      if(-not [FoobarHostWindow]::Enabled($cueWindow,290)) {
+        throw 'Selected external CUE does not enable native Inspect CUE.'
+      }
+      if(-not [FoobarHostWindow]::Click($cueWindow,290)) {
+        throw 'Actual native Inspect CUE command was not activated.'
+      }
+      $cueRows=[FoobarHostWindow]::ListCount($cueWindow,$ClipboardListId)
+      if($cueRows -lt 8) {
+        throw "Native CUE original inventory is incomplete ($cueRows rows)."
+      }
+      Write-Host "HOST_EXTERNAL_CUE_INSPECT_$Architecture=PASS (real native CUE source inventory)"
+      # Identical synthetic two-mix edition (no actual Beatport service).
+      # The original CUE has two REM GENRE instances, so the result MUST
+      # keep all origins and forbid conflicting global replacement.
+      $cueEdition=@'
+@beatport-release-json
+{"id":987,"name":"Runner EP","track_count":2,"new_release_date":"2026-10-16"}
+@beatport-tracks-json
+{"count":2,"results":[{"id":321,"name":"Runner","mix_name":"Extended Mix","number":1,"artists":[{"name":"Example DJ"}],"length_ms":402500,"release":{"id":987,"name":"Runner EP"}},{"id":322,"name":"Runner","mix_name":"Radio Edit","number":2,"artists":[{"name":"Example DJ"}],"length_ms":202500,"release":{"id":987,"name":"Runner EP"}}]}
+'@
+      try {
+        Set-Clipboard -Value $cueEdition -ErrorAction Stop
+        if(-not [FoobarHostWindow]::Enabled($cueWindow,$ClipboardButtonId) -or
+           -not [FoobarHostWindow]::Click($cueWindow,$ClipboardButtonId)) {
+          throw 'CUE edition import control refused actual native activation.'
+        }
+        $rows=[FoobarHostWindow]::ListCount($cueWindow,$ClipboardListId)
+        $details=[FoobarHostWindow]::ListCount($cueWindow,294)
+        $notice=[FoobarHostWindow]::Text($cueWindow,272)
+        if($rows -lt 4 -or $details -lt 1 -or
+           $notice -notmatch '^Release details and tentative CUE assignment') {
+          throw "Native Beatport external CUE comparison missing ($rows summary, $details detail)."
+        }
+        Assert-FoobarFixtureUnchanged -Path $cuePath -Before $cueBefore
+        Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+        Write-Host "HOST_EXTERNAL_CUE_EDITION_COMPARE_$Architecture=PASS (2 mixes, read-only carrier)"
+      } finally {
+        Set-Clipboard -Value '' -ErrorAction SilentlyContinue
+      }
+      if(-not [FoobarHostWindow]::Close($cueWindow)) {
+        throw 'Native external CUE workspace failed to close cleanly.'
+      }
+      # Return to the original WAV to qualify its independent stale gate.
+      $arg='/context_command:"'+$leaf+'" "'+$fixture+'"'
+      $restored=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
+      if(-not $restored.WaitForExit(15000) -or $restored.ExitCode -ne 0) {
+        throw 'Failed to restore original WAV for stale gate.'
+      }
+      $window=[IntPtr]::Zero
+      for($i=0;$i -lt 32;$i++) {
+        Start-Sleep -Milliseconds 300
+        $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+        if($found.Length -eq 1) {$window=$found[0];break}
+      }
+      if($window -eq [IntPtr]::Zero) { throw 'Could not reopen WAV workspace.' }
+      if(-not [FoobarHostWindow]::Enabled($window,$ClipboardButtonId)) {
+        throw 'Original WAV workspace import control was not re-enabled.'
+      }
+    }
     if($StalePhysicalProbe) {
       if(-not $OfflineClipboardTest -or $ClipboardButtonId -le 0 -or
          -not [FoobarHostWindow]::Enabled($window,$ClipboardButtonId)) {

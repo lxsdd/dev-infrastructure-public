@@ -3,7 +3,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$ProductExe,
-    [ValidateRange(5,60)][int]$TimeoutSeconds = 25
+    [ValidateRange(5,60)][int]$TimeoutSeconds = 25,
+    [switch]$RequireWindowFits
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -88,6 +89,9 @@ try {
     } else {
         # Product min window 1050x700 exceeds the stock 1024x768 GUI.
         Write-Host 'PRODUCTION_WPF_WINDOW_FITS_WORKAREA=LIMITED_BY_DISPLAY_RESOLUTION'
+    }
+    if ($RequireWindowFits -and -not $windowFits) {
+        throw 'FAIL: production WPF window does not fit the actual primary Windows work area.'
     }
     Write-Host 'PRODUCTION_WPF_PROBE=PASS_READ_ONLY'
 } finally {

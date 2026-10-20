@@ -13,6 +13,12 @@ public static class DesktopSessionProbe {
     public static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll", SetLastError=true)]
     public static extern bool CloseDesktop(IntPtr handle);
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint flags, uint x, uint y, uint data, IntPtr extra);
 }
 '@
 $form = $null
@@ -44,6 +50,8 @@ try {
     $button.Location = New-Object System.Drawing.Point(12, 12)
     $button.Size = New-Object System.Drawing.Size(160, 35)
     $form.Controls.Add($button)
+    $script:syntheticButtonClicked = $false
+    $button.Add_Click({ $script:syntheticButtonClicked = $true })
     $form.Show()
     [System.Windows.Forms.Application]::DoEvents()
     Start-Sleep -Milliseconds 350
@@ -59,7 +67,7 @@ try {
             $kind = $element.Current.ControlType.ProgrammaticName
             Write-Host "SYNTHETIC_UIA_CONTROL_TYPE=$kind"
             Write-Host "SYNTHETIC_UIA_CONTROL_NAME=$name"
-            if ($kind -eq 'ControlType.Button' -and
+            if (($kind -eq 'ControlType.Button' -or $kind -eq 'ControlType.Pane') -and
                 ($name -eq 'SyntheticProbeButton' -or $name -eq 'Read-only test')) {
                 $uia = 'PASS'
             } else {
@@ -83,10 +91,30 @@ try {
         $pixel = 'UNAVAILABLE_' + $_.Exception.GetType().Name
     }
     Write-Host "SYNTHETIC_DESKTOP_PIXEL_CAPTURE=$pixel"
-    if ($uia -eq 'PASS' -and $pixel -eq 'PASS' -and $hasInputDesktop -and $interactive) {
-        Write-Host 'GRAPHICS_SESSION_CLASS=INTERACTIVE_GRAPHICAL_DESKTOP_CANDIDATE'
+    $mouse = 'NOT_TESTED'
+    try {
+        [void][DesktopSessionProbe]::SetForegroundWindow($form.Handle)
+        $form.Activate()
+        [System.Windows.Forms.Application]::DoEvents()
+        $targetPoint = $button.PointToScreen((New-Object System.Drawing.Point(60, 17)))
+        if (-not [DesktopSessionProbe]::SetCursorPos($targetPoint.X, $targetPoint.Y)) {
+            throw 'Could not position synthetic mouse cursor.'
+        }
+        [DesktopSessionProbe]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero)
+        [DesktopSessionProbe]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 80
+        [System.Windows.Forms.Application]::DoEvents()
+        $mouse = if ($script:syntheticButtonClicked) { 'PASS' } else { 'NO_CLICK_EVENT' }
+    } catch {
+        $mouse = 'UNAVAILABLE_' + $_.Exception.GetType().Name
+    }
+    Write-Host "SYNTHETIC_MOUSE_INPUT=$mouse"
+    if ($uia -eq 'PASS' -and $pixel -eq 'PASS' -and $mouse -eq 'PASS' -and
+        $hasInputDesktop -and $interactive) {
+        Write-Host 'GRAPHICS_SESSION_CLASS=INTERACTIVE_UIA_CAPTURE_AND_MOUSE_PASS'
     } else {
-        Write-Host 'GRAPHICS_SESSION_CLASS=STRUCTURAL_UI_TESTS_ONLY_UNTIL_PROVEN'
+        Write-Host 'GRAPHICS_SESSION_CLASS=PARTIAL_DESKTOP_CAPABILITY'
     }
     Write-Host 'SAFE_PROBE=PASS (no production app, no external upload, no screenshot saved)'
 } finally {

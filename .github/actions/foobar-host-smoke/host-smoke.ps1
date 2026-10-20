@@ -3,6 +3,7 @@
 param(
   [Parameter(Mandatory)][ValidateSet('Win32','x64')][string]$Architecture,
   [string]$ComponentDll = '',
+  [string]$ProfileCheckScript = '',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -32,6 +33,17 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or [string]::IsNullOrWhiteSpace($env:RUNNER_
 }
 if (@(Get-Process -Name foobar2000 -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'Unrelated foobar2000 process exists: refuse non-isolated testing.'
+}
+$profileCheck=''
+if ($ProfileCheckScript) {
+  if (-not $ComponentDll) { throw 'A profile probe requires a same-job component DLL.' }
+  if ([string]::IsNullOrWhiteSpace($env:GITHUB_WORKSPACE)) { throw 'No isolated checkout directory.' }
+  $profileCheck=(Resolve-Path -LiteralPath $ProfileCheckScript -ErrorAction Stop).Path
+  $workspace=[IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd([char]'\\',[char]'/') + [IO.Path]::DirectorySeparatorChar
+  if (-not $profileCheck.StartsWith($workspace,[StringComparison]::OrdinalIgnoreCase) -or
+      [IO.Path]::GetExtension($profileCheck) -ine '.ps1') {
+    throw 'Profile probe must be a PowerShell script in the checked-out repository.'
+  }
 }
 $spec=$specs[$Architecture]
 if (([uri]$spec.Url).Host -ne 'www.foobar2000.org') { throw 'Invalid official installer origin.' }
@@ -84,6 +96,11 @@ try {
   }
   if (-not $expected -and $proc.HasExited) { throw "foobar2000 $Architecture did not stay running." }
   if ($expected -and -not $loaded) { throw "COMPONENT_LOAD_$Architecture=FAIL ($expected absent in process modules)" }
+  if ($profileCheck) {
+    # A project-specific, read-only check runs before this isolated host/profile is deleted.
+    & $profileCheck -ProfileDirectory (Join-Path $target 'profile') -Architecture $Architecture
+    Write-Host "HOST_PROFILE_CHECK_$Architecture=PASS"
+  }
   Write-Host "HOST_BOOT_$Architecture=PASS"
   if ($expected) { Write-Host "COMPONENT_LOAD_$Architecture=PASS" }
   else { Write-Host "COMPONENT_LOAD_$Architecture=NOT_TESTED" }

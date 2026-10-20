@@ -20,6 +20,18 @@ inputs:
     required: false
     description: Comma-separated native control IDs
     default: ""
+  offline-clipboard-test:
+    required: false
+    description: Opt-in bounded synthetic manual candidate for a real read-only Win32 dialog
+    default: ""
+  clipboard-button-id:
+    required: false
+    description: Native ID of existing user-initiated Import clipboard control
+    default: "0"
+  clipboard-list-id:
+    required: false
+    description: Native ID of existing read-only candidate field ListView
+    default: "0"
 runs:
   using: composite
   steps:
@@ -32,5 +44,8 @@ runs:
         FB2K_CONTEXT_COMMAND: ${{ inputs.context-command }}
         FB2K_EXPECTED_WINDOW_TITLE: ${{ inputs.expected-window-title }}
         FB2K_REQUIRED_CONTROLS: ${{ inputs.required-control-ids }}
+        FB2K_OFFLINE_CLIPBOARD_TEST: ${{ inputs.offline-clipboard-test }}
+        FB2K_CLIPBOARD_BUTTON_ID: ${{ inputs.clipboard-button-id }}
+        FB2K_CLIPBOARD_LIST_ID: ${{ inputs.clipboard-list-id }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -OfflineClipboardTest $env:FB2K_OFFLINE_CLIPBOARD_TEST -ClipboardButtonId ([int]$env:FB2K_CLIPBOARD_BUTTON_ID) -ClipboardListId ([int]$env:FB2K_CLIPBOARD_LIST_ID)

@@ -6,6 +6,9 @@ param(
   [string]$ContextCommand = '',
   [string]$ExpectedWindowTitle = '',
   [string]$RequiredControlIds = '',
+  [string]$OfflineClipboardTest = '',
+  [int]$ClipboardButtonId = 0,
+  [int]$ClipboardListId = 0,
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -61,6 +64,21 @@ public static class FoobarHostWindow {
       return true;
     },IntPtr.Zero);
     return windows.ToArray();
+  }
+  [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr h);
+  public static bool Click(IntPtr dialog,int id) {
+    var control=GetDlgItem(dialog,id);
+    if(control==IntPtr.Zero || !IsWindowEnabled(control) || !IsWindowVisible(control)) return false;
+    IntPtr result;
+    return SendMessageTimeoutW(control,0x00F5,IntPtr.Zero,IntPtr.Zero,2,8000,out result)!=IntPtr.Zero;
+  }
+  public static int ListCount(IntPtr dialog,int id) {
+    var list=GetDlgItem(dialog,id);
+    if(list==IntPtr.Zero) throw new InvalidOperationException("Missing native result list.");
+    IntPtr count;
+    if(SendMessageTimeoutW(list,0x1004,IntPtr.Zero,IntPtr.Zero,2,5000,out count)==IntPtr.Zero)
+      throw new InvalidOperationException("Native candidate ListView did not respond.");
+    return checked((int)count.ToInt64());
   }
   public static string[] Describe(uint pid) {
     var windows=new System.Collections.Generic.List<string>();
@@ -226,6 +244,30 @@ try {
     }
     Write-Host "HOST_WORKSPACE_OPEN_$Architecture=PASS"
     Write-Host "HOST_WORKSPACE_CONTROLS_$Architecture=PASS"
+    if($OfflineClipboardTest) {
+      # No provider call. Synthetic user-declared metadata only.
+      if($OfflineClipboardTest.Length -gt 2048 -or
+         $OfflineClipboardTest -notmatch '(?m)^@provider=discogs\r?$' -or
+         $OfflineClipboardTest -notmatch '(?m)^@id=release:[0-9]+\r?$' -or
+         $OfflineClipboardTest -notmatch '(?m)^GENRE=[A-Za-z0-9 -]{1,50}\r?$' -or
+         $ClipboardButtonId -lt 1 -or $ClipboardListId -lt 1) {
+        throw 'Offline clipboard probe accepts only a bounded synthetic declared candidate.'
+      }
+      $prior=[FoobarHostWindow]::ListCount($window,$ClipboardListId)
+      try {
+        Set-Clipboard -Value $OfflineClipboardTest -ErrorAction Stop
+        if(-not [FoobarHostWindow]::Click($window,$ClipboardButtonId)) {
+          throw 'Native Import clipboard control did not accept activation.'
+        }
+        $after=[FoobarHostWindow]::ListCount($window,$ClipboardListId)
+        if($after -lt 2 -or $after -le $prior) {
+          throw "Native offline candidate fields not populated ($prior to $after)."
+        }
+        Write-Host "HOST_OFFLINE_FIELD_COMPARE_$Architecture=PASS (declared synthetic provenance, read-only)"
+      } finally {
+        Set-Clipboard -Value '' -ErrorAction SilentlyContinue
+      }
+    }
     $forward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
     if(-not $forward.WaitForExit(15000) -or $forward.ExitCode -ne 0) {
       throw 'Repeat context command failed.'

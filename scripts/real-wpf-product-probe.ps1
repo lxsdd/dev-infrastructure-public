@@ -117,6 +117,59 @@ try {
     Start-Sleep -Milliseconds 100
     if (-not $field.Current.HasKeyboardFocus) { throw 'Actual WPF source field rejected keyboard focus.' }
     Write-Host 'PRODUCTION_WPF_KEYBOARD_FOCUS=PASS'
+    # Only switch actual production TabItems through UI Automation.
+    # Never click Find, Analyze, Preview, Apply or Restore; no database access.
+    foreach ($case in @(
+        @{ Tab = 'Target Library'; Tag = 'TARGET'; IDs = @('TargetDatabaseTextBox', 'DiscoverTargetButton') },
+        @{ Tab = 'Path matching'; Tag = 'PATH'; IDs = @('AnalyzePathsButton') },
+        @{ Tab = 'Preview / Changes'; Tag = 'PREVIEW'; IDs = @('BuildPreviewButton') }
+    )) {
+        $tabCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, $case.Tab)
+        $matches = $root.FindAll(
+            [System.Windows.Automation.TreeScope]::Descendants, $tabCondition)
+        $tabs = @($matches | Where-Object {
+            $_.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem'
+        })
+        if ($tabs.Count -ne 1) {
+            throw ('Expected exactly one real WPF TabItem for ' + $case.Tag)
+        }
+        $selection = [System.Windows.Automation.SelectionItemPattern]$tabs[0].GetCurrentPattern(
+            [System.Windows.Automation.SelectionItemPattern]::Pattern)
+        $selection.Select()
+        Start-Sleep -Milliseconds 200
+        if (-not $selection.Current.IsSelected) {
+            throw ('WPF tab selection failed for ' + $case.Tag)
+        }
+        $controlResult = Test-WindowsUiAccessibility -WindowHandle $handle -RequiredAutomationIds ([string[]]$case.IDs)
+        if (-not $controlResult.Passed) {
+            throw ('Real WPF tab ' + $case.Tag + ' lost a visible accessible control: ' +
+                ($controlResult.Issues -join ','))
+        }
+        Write-Host ('PRODUCTION_WPF_TAB_' + $case.Tag + '_UIA=PASS')
+    }
+    # A tab switch must never enable DB writes without explicit validation.
+    # Only inspect enabled state. Neither dangerous button is clicked.
+    $applyCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty, 'Apply / Restore')
+    $applyTabs = @($root.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants, $applyCondition) |
+        Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem' })
+    if ($applyTabs.Count -ne 1) { throw 'Unsafe-action tab is not identifiable.' }
+    $applySelection = [System.Windows.Automation.SelectionItemPattern]$applyTabs[0].GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $applySelection.Select()
+    Start-Sleep -Milliseconds 200
+    foreach ($buttonName in @('ApplyButton', 'RestoreButton')) {
+        $buttonCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $buttonName)
+        $found = $root.FindAll(
+            [System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
+        if ($found.Count -ne 1 -or $found.Item(0).Current.IsEnabled) {
+            throw ('Fail-closed WPF database action is not disabled: ' + $buttonName)
+        }
+    }
+    Write-Host 'PRODUCTION_WPF_UNSAFE_ACTIONS_DISABLED=PASS'
     $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $rect = $root.Current.BoundingRectangle
     $windowFits = $rect.Left -ge $workArea.Left -and $rect.Top -ge $workArea.Top -and

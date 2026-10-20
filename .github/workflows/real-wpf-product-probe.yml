@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: lxsdd/rekordbox-mytag-sync
-          ref: 3d2ad55d29e1b02c1add95829703a042eca46828
+          ref: 6974bdd603908adebd17031302244feaa100ae78
           path: product
           persist-credentials: false
       - name: Verify preinstalled .NET 10 Windows SDK on hosted runner
@@ -37,11 +37,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           # dotnet selects global.json from the CURRENT DIRECTORY, not the project path.
-          # Honor the product's immutable 10.0.401 SDK and locked NuGet graph.
-          $exactSdk = '10.0.401'
-          $foundSdk = @(dotnet --list-sdks | Where-Object { $_ -match '^10[.]0[.]401\s' })
+          # Honor the product's immutable 10.0.402 SDK and locked NuGet graph.
+          $exactSdk = '10.0.402'
+          $foundSdk = @(dotnet --list-sdks | Where-Object { $_ -match '^10[.]0[.]402\s' })
           if ($foundSdk.Count -eq 0) {
-            # The hosted Windows image can roll to 10.0.402 independently
+            # The hosted Windows image can contain other 10.0.4xx builds
             # across matrix jobs. Restore the exact product SDK in RUNNER_TEMP,
             # never patch the repository global.json or its NuGet lockfile.
             $installer = Join-Path $env:RUNNER_TEMP 'dotnet-install-exact.ps1'
@@ -59,7 +59,7 @@ jobs:
           try {
             $sdk = dotnet --version
             Write-Host "PINNED_PRODUCT_DOTNET_SDK=$sdk"
-            if ($sdk -ne '10.0.401') { throw 'Pinned product global.json SDK 10.0.401 not honored.' }
+            if ($sdk -ne '10.0.402') { throw 'Pinned product global.json SDK 10.0.402 not honored.' }
             $p = 'src/RekordboxMyTagSync/RekordboxMyTagSync.csproj'
             dotnet restore $p -r win-x64 --locked-mode
             if ($LASTEXITCODE -ne 0) { throw 'Pinned source locked restore failed.' }
@@ -71,6 +71,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = Join-Path $env:GITHUB_WORKSPACE 'product/src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/rekordbox MyTagSync.exe'
-          Write-Host 'WINDOW_CASE=qualified-current-compact-main'
+          Write-Host 'WINDOW_CASE=qualified-current-secured-compact-main'
           & ./scripts/real-wpf-product-probe.ps1 -ProductExe $exe -RequireWindowFits
           if (-not $?) { throw 'Real WPF window probe failed.' }

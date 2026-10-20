@@ -6,6 +6,7 @@ Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 . (Join-Path $PSScriptRoot 'windows-ui-geometry.ps1')
+. (Join-Path $PSScriptRoot 'windows-ui-accessibility.ps1')
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -87,26 +88,15 @@ try {
         $uia = 'UNAVAILABLE_' + $_.Exception.GetType().Name
     }
     Write-Host "SYNTHETIC_UIA_ELEMENT=$uia"
-    # A real UI driver locates controls through the accessibility tree,
-    # not only from their known native handles. This avoids HWND-only
-    # confidence when migrating to actual WPF/foobar production windows.
     $uiaTree = 'NOT_TESTED'
     try {
-        $root = [System.Windows.Automation.AutomationElement]::FromHandle($form.Handle)
-        $condition = New-Object System.Windows.Automation.PropertyCondition(
-            [System.Windows.Automation.AutomationElement]::NameProperty,
-            'Read-only test')
-        $child = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
-        if ($null -eq $child) {
-            $uiaTree = 'ELEMENT_NOT_FOUND'
+        $positive = Test-WindowsUiAccessibility -WindowHandle $form.Handle -RequiredNames @('Read-only test')
+        $negative = Test-WindowsUiAccessibility -WindowHandle $form.Handle -RequiredNames @('ABSENT_SYNTHETIC_NAME_SENTINEL')
+        if ($positive.Passed -and -not $negative.Passed -and
+            ($negative.Issues -contains 'NAME_COUNT_NOT_ONE')) {
+            $uiaTree = 'PASS'
         } else {
-            $rect = $child.Current.BoundingRectangle
-            $clientBox = $button.RectangleToScreen($button.ClientRectangle)
-            $diff = [math]::Abs($rect.Left - $clientBox.Left) +
-                [math]::Abs($rect.Top - $clientBox.Top)
-            $uiaTree = if ((-not $child.Current.IsOffscreen) -and
-                $rect.Width -ge 20 -and $rect.Height -ge 15 -and
-                $diff -le 24) { 'PASS' } else { 'BOUNDS_MISMATCH' }
+            $uiaTree = 'BOUNDS_OR_NEGATIVE_REGRESSION'
         }
     } catch {
         $uiaTree = 'UNAVAILABLE_' + $_.Exception.GetType().Name

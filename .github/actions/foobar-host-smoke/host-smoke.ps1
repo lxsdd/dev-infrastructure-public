@@ -513,6 +513,28 @@ FILE "synthetic-8k-silence.wav" WAVE
       } finally {
         Set-Clipboard -Value '' -ErrorAction SilentlyContinue
       }
+      # Safety-negative after immutable fixture confirmation: change only
+      # disposable synthetic .cue. Foobar may still have the OLD cached
+      # metadata; Studio must compare captured disk file identity too.
+      [IO.File]::AppendAllText($cuePath,
+        ("REM QA_ONLY_MUTATION_AFTER_SNAPSHOT true"+[Environment]::NewLine),
+        ([Text.UTF8Encoding]::new($false)))
+      [IO.File]::SetLastWriteTimeUtc($cuePath,([DateTime]::UtcNow).AddMinutes(3))
+      Set-Clipboard -Value $cueEdition -ErrorAction Stop
+      try {
+        if(-not [FoobarHostWindow]::Click($cueWindow,$ClipboardButtonId)) {
+          throw 'Could not deliver stale CUE import action to native Studio.'
+        }
+        Start-Sleep -Milliseconds 220
+        $staleTitle=[FoobarHostWindow]::Text($cueWindow,0)
+        if($staleTitle -ne 'Music Metadata Studio - STALE snapshot (Read-only)' -or
+           [FoobarHostWindow]::Enabled($cueWindow,$ClipboardButtonId)) {
+          throw "External CUE disk-only mutation was not locked down (title=$staleTitle)."
+        }
+        Write-Host "HOST_EXTERNAL_CUE_STALE_LOCKDOWN_$Architecture=PASS (changed disposable CUE only)"
+      } finally {
+        Set-Clipboard -Value '' -ErrorAction SilentlyContinue
+      }
       if(-not [FoobarHostWindow]::Close($cueWindow)) {
         throw 'Native external CUE workspace failed to close cleanly.'
       }

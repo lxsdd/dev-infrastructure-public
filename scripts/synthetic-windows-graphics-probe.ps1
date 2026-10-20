@@ -87,6 +87,31 @@ try {
         $uia = 'UNAVAILABLE_' + $_.Exception.GetType().Name
     }
     Write-Host "SYNTHETIC_UIA_ELEMENT=$uia"
+    # A real UI driver locates controls through the accessibility tree,
+    # not only from their known native handles. This avoids HWND-only
+    # confidence when migrating to actual WPF/foobar production windows.
+    $uiaTree = 'NOT_TESTED'
+    try {
+        $root = [System.Windows.Automation.AutomationElement]::FromHandle($form.Handle)
+        $condition = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty,
+            'Read-only test')
+        $child = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+        if ($null -eq $child) {
+            $uiaTree = 'ELEMENT_NOT_FOUND'
+        } else {
+            $rect = $child.Current.BoundingRectangle
+            $clientBox = $button.RectangleToScreen($button.ClientRectangle)
+            $diff = [math]::Abs($rect.Left - $clientBox.Left) +
+                [math]::Abs($rect.Top - $clientBox.Top)
+            $uiaTree = if ((-not $child.Current.IsOffscreen) -and
+                $rect.Width -ge 20 -and $rect.Height -ge 15 -and
+                $diff -le 24) { 'PASS' } else { 'BOUNDS_MISMATCH' }
+        }
+    } catch {
+        $uiaTree = 'UNAVAILABLE_' + $_.Exception.GetType().Name
+    }
+    Write-Host "SYNTHETIC_UIA_TREE_BOUNDS=$uiaTree"
 
     $pixel = 'UNAVAILABLE'
     try {
@@ -203,7 +228,7 @@ try {
         $scaledLayouts.Count -eq 4) { 'PASS' } else { 'FAIL' }
     Write-Host "SYNTHETIC_SCALED_LAYOUT_100_125_150_200=$scale"
     Write-Host 'ACTUAL_SYSTEM_DPI_MATRIX=NOT_TESTED'
-    if ($uia -eq 'PASS' -and $pixel -eq 'PASS' -and $mouse -eq 'PASS' -and
+    if ($uia -eq 'PASS' -and $uiaTree -eq 'PASS' -and $pixel -eq 'PASS' -and $mouse -eq 'PASS' -and
         $keyboard -eq 'PASS' -and $layout -eq 'PASS' -and $negative -eq 'PASS' -and
         $scale -eq 'PASS' -and
         $hasInputDesktop -and $interactive) {
@@ -211,7 +236,7 @@ try {
     } else {
         Write-Host 'GRAPHICS_SESSION_CLASS=PARTIAL_DESKTOP_CAPABILITY'
     }
-    if ($uia -ne 'PASS' -or $pixel -ne 'PASS' -or $mouse -ne 'PASS' -or
+    if ($uia -ne 'PASS' -or $uiaTree -ne 'PASS' -or $pixel -ne 'PASS' -or $mouse -ne 'PASS' -or
         $keyboard -ne 'PASS' -or $layout -ne 'PASS' -or
         $negative -ne 'PASS' -or $scale -ne 'PASS' -or
         -not $hasInputDesktop -or -not $interactive) {

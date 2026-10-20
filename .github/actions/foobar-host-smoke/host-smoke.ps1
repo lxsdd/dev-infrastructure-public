@@ -11,6 +11,8 @@ param(
   [int]$ClipboardListId = 0,
   [bool]$BeatportEditionProbe = $false,
   [bool]$StalePhysicalProbe = $false,
+  [bool]$AuthorizedDiscogsProbe = $false,
+  [string]$DiscogsReleaseId = '38012673',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -86,6 +88,25 @@ public static class FoobarHostWindow {
     var control=GetDlgItem(dialog,id);
     return control!=IntPtr.Zero && IsWindowEnabled(control);
   }
+  public static bool SetText(IntPtr dialog,int id,string value) {
+    var control=GetDlgItem(dialog,id);
+    if(control==IntPtr.Zero) return false;
+    var ptr=Marshal.StringToHGlobalUni(value);
+    try {
+      IntPtr result;
+      return SendMessageTimeoutW(control,0x000C,IntPtr.Zero,ptr,2,5000,out result)!=IntPtr.Zero
+        && result!=IntPtr.Zero;
+    } finally { Marshal.ZeroFreeGlobalAllocUnicode(ptr); }
+  }
+  public static bool SelectProvider(IntPtr dialog,int id,int index) {
+    var combo=GetDlgItem(dialog,id);
+    if(combo==IntPtr.Zero) return false;
+    IntPtr result;
+    if(SendMessageTimeoutW(combo,0x014E,new IntPtr(index),IntPtr.Zero,2,5000,out result)==IntPtr.Zero
+      || result.ToInt64()!=index) return false;
+    var command=new IntPtr((1<<16)|id);
+    return SendMessageTimeoutW(dialog,0x0111,command,combo,2,5000,out result)!=IntPtr.Zero;
+  }
   public static string Text(IntPtr hwnd,int id) {
     var control=id==0?hwnd:GetDlgItem(hwnd,id);
     if(control==IntPtr.Zero) return "";
@@ -115,6 +136,22 @@ public static class FoobarHostWindow {
 if ($env:GITHUB_ACTIONS -ne 'true' -or [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
   throw 'Only a disposable GitHub Actions runner is supported.'
 }
+$discogsQaToken=$null
+if($AuthorizedDiscogsProbe) {
+  # Secrets are only allowed via environment-scoped, explicit manual QA.
+  # Never inherit the secret into foobar.exe or put it on a command line.
+  if($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -or
+      $env:GITHUB_REF -ne 'refs/heads/feature/online-metadata-discovery-foundation-20261009' -or
+      -not $env:FB2K_DISCOGS_QA_TOKEN -or
+      $env:FB2K_DISCOGS_QA_TOKEN -cnotmatch '^[A-Za-z0-9_-]{8,256}$' -or
+      @('38012673','37332711','36397609','36819730') -cnotcontains $DiscogsReleaseId -or
+      $StalePhysicalProbe) {
+    throw 'AUTHORIZED_DISCOGS_PREFLIGHT=FAIL (manual authorized environment or allowlisted release required)'
+  }
+  $discogsQaToken=$env:FB2K_DISCOGS_QA_TOKEN
+  [Environment]::SetEnvironmentVariable('FB2K_DISCOGS_QA_TOKEN',$null,'Process')
+}
+
 if (@(Get-Process -Name foobar2000 -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'Unrelated foobar2000 process exists: refuse non-isolated testing.'
 }
@@ -279,6 +316,55 @@ try {
         Write-Host "HOST_OFFLINE_FIELD_COMPARE_$Architecture=PASS (declared synthetic provenance, read-only)"
       } finally {
         Set-Clipboard -Value '' -ErrorAction SilentlyContinue
+      }
+    }
+    if($AuthorizedDiscogsProbe) {
+      # Deliberate, bounded official-token GET initiated via the real Studio
+      # provider selector, masked token edit, exact release URL, and Search.
+      # No scraping, mock network, or user audio. NEVER log response, header,
+      # token, process environment, clipboard or native password control.
+      try {
+        if(-not [FoobarHostWindow]::SelectProvider($window,299,1)) {
+          throw 'Discogs provider could not be selected in the native UI.'
+        }
+        if(-not [FoobarHostWindow]::SetText($window,301,$discogsQaToken)) {
+          throw 'Masked Discogs token field was unavailable.'
+        }
+        $url='https://www.discogs.com/release/'+$DiscogsReleaseId
+        if(-not [FoobarHostWindow]::SetText($window,291,$url)) {
+          throw 'Exact release search field unavailable.'
+        }
+        if(-not [FoobarHostWindow]::Click($window,292)) {
+          throw 'Authorized Discogs search button refused native activation.'
+        }
+        $confirmed=$false
+        for($attempt=0;$attempt -lt 50;$attempt++) {
+          Start-Sleep -Milliseconds 500
+          $proc.Refresh()
+          if($proc.HasExited) { throw 'foobar exited during authorized Discogs lookup.' }
+          $hint=[FoobarHostWindow]::Text($window,272)
+          if($hint -like 'Discogs read-only lookup failed:*') {
+            throw 'AUTHORIZED_DISCOGS_LIVE=FAIL (official response rejected by component)'
+          }
+          if($hint -like 'Release details and tentative CUE assignment*') {
+            $confirmed=$true
+            break
+          }
+        }
+        if(-not $confirmed) { throw 'AUTHORIZED_DISCOGS_LIVE=FAIL (no exact edition display)' }
+        $groups=[FoobarHostWindow]::ListCount($window,271)
+        $detail=[FoobarHostWindow]::ListCount($window,294)
+        if($groups -lt 2 -or $detail -lt 1) {
+          throw 'AUTHORIZED_DISCOGS_LIVE=FAIL (missing native release or field evidence)'
+        }
+        Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+        Write-Host "HOST_AUTHORIZED_DISCOGS_EXACT_EDITION_$Architecture=PASS (official HTTPS, native read-only release and fields)"
+        Write-Host "HOST_AUTHORIZED_DISCOGS_RELEASE_ID=$DiscogsReleaseId"
+      } finally {
+        # Best effort wipe from the actual masked native edit and shell.
+        $null=[FoobarHostWindow]::SetText($window,301,'')
+        $discogsQaToken=$null
+        [Environment]::SetEnvironmentVariable('FB2K_DISCOGS_QA_TOKEN',$null,'Process')
       }
     }
     if($BeatportEditionProbe) {

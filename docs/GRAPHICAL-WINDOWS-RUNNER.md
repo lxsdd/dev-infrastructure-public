@@ -178,3 +178,33 @@ ist ein belastbarer Bedienbarkeitstest für reale WPF-Steuerelemente, **kein**
 visueller Abnahmetest zu Lesbarkeit, Schnittstellenästhetik, echten
 Windows-11-Touchpad-Gesten oder systemweiten DPI-Wechseln. Dazu sind
 weitere getrennte Prüfungen notwendig.
+
+
+## Laufende Produktversion und echte Tastatur-Tabfolge
+
+Der Prüfstand des aktuellen, unveränderlich fixierten MyTagSync-`main` wurde
+wegen einer Sicherheitsaktualisierung von `.NET SDK 10.0.401` auf
+`.NET SDK 10.0.402` und aktualisierte SQLite-Abhängigkeiten umgestellt.
+Es wurde ausschließlich der **gemeinsame Grafik-Runner** angepasst, nicht
+die Produktquelldatei oder der Paket-Lock.
+
+- Aktueller Produkt-Commit:
+  `6974bdd603908adebd17031302244feaa100ae78`.
+- [Aktueller Build und UI-Prüfung #39496487332](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39496487332):
+  **SUCCESS**, **0 Artefakte**, echtes Programmfenster, feste SDK-Version,
+  sichtbare Registerkarten, 1024×720-Fenstergrenzen und Schreibsperre geprüft.
+- [Erweiterter Tastatur-Lauf #39496799643](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39496799643):
+  **SUCCESS**, **0 Artefakte**.
+  Der tatsächlich fokussierte `TargetDatabaseTextBox` erhielt ein reales
+  `Tab`-Tastenereignis. Der Tastaturfokus wechselte eindeutig auf
+  `DiscoverTargetButton` (`Find libraries`);
+  `Umschalt+Tab` brachte ihn wieder zum Eingabefeld.
+  `PRODUCTION_WPF_KEYBOARD_FORWARD_TAB=PASS` und
+  `PRODUCTION_WPF_KEYBOARD_REVERSE_TAB=PASS`.
+- Keine Find-/Scan-/Preview-/Apply-/Restore-Aktion wurde ausgelöst. Die
+  Produktionsschaltflächen für Datenbankänderungen blieben deaktiviert.
+
+Das sind echte **Tastatur- und Accessibility-Prüfungen** eines aktuellen,
+leeren Produktionsfensters in einer flüchtigen Windows-GitHub-Sitzung. Eine
+menschliche Lesbarkeits- und intuitiv-visuelle Prüfung, echte Windows-DPI-
+Umschaltung und Hardware-Touchpadtests bleiben separate offene Kriterien.

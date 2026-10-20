@@ -4,6 +4,7 @@ param(
   [Parameter(Mandatory)][ValidateSet('Win32','x64')][string]$Architecture,
   [string]$ComponentDll = '',
   [string]$ProfileCheckScript = '',
+  [ValidateSet('true','false')][string]$RestartProfileCheck = 'false',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -45,6 +46,7 @@ if ($ProfileCheckScript) {
     throw 'Profile probe must be a PowerShell script in the checked-out repository.'
   }
 }
+if ($RestartProfileCheck -eq 'true' -and -not $profileCheck) { throw 'Restart validation requires a profile check script.' }
 $spec=$specs[$Architecture]
 if (([uri]$spec.Url).Host -ne 'www.foobar2000.org') { throw 'Invalid official installer origin.' }
 $dir=Join-Path $env:RUNNER_TEMP ('fb2k-host-'+$Architecture+'-'+[guid]::NewGuid().ToString('N'))
@@ -100,6 +102,31 @@ try {
     # A project-specific, read-only check runs before this isolated host/profile is deleted.
     & $profileCheck -ProfileDirectory (Join-Path $target 'profile') -Architecture $Architecture
     Write-Host "HOST_PROFILE_CHECK_$Architecture=PASS"
+    if ($RestartProfileCheck -eq 'true') {
+      # Simulate abrupt host termination only inside the disposable installation.
+      Stop-Process -Id $proc.Id -Force -ErrorAction Stop
+      if (-not $proc.WaitForExit(10000)) { throw 'Disposable foobar did not stop for restart qualification.' }
+      $proc = Start-Process -FilePath $exe -WorkingDirectory $target -PassThru
+      $restartDeadline=[DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
+      $reloaded=$false
+      while ([DateTime]::UtcNow -lt $restartDeadline) {
+        Start-Sleep -Milliseconds 500
+        $proc.Refresh()
+        if ($proc.HasExited) { throw "foobar2000 $Architecture exited during restart ($($proc.ExitCode))" }
+        try {
+          $modules=@((Get-Process -Id $proc.Id -ErrorAction Stop).Modules)
+          $reloaded=@($modules | Where-Object {
+            $_.ModuleName -ieq $expected -and
+            $_.FileName.StartsWith($target,[StringComparison]::OrdinalIgnoreCase)
+          }).Count -gt 0
+        } catch [System.ComponentModel.Win32Exception] { }
+        if ($reloaded) { break }
+      }
+      if (-not $reloaded) { throw "COMPONENT_RESTART_LOAD_$Architecture=FAIL" }
+      & $profileCheck -ProfileDirectory (Join-Path $target 'profile') -Architecture $Architecture -ProbeIteration 2
+      Write-Host "COMPONENT_RESTART_LOAD_$Architecture=PASS"
+      Write-Host "HOST_PROFILE_RESTART_$Architecture=PASS"
+    }
   }
   Write-Host "HOST_BOOT_$Architecture=PASS"
   if ($expected) { Write-Host "COMPONENT_LOAD_$Architecture=PASS" }

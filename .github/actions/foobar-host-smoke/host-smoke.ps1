@@ -104,7 +104,16 @@ try {
     Write-Host "HOST_PROFILE_CHECK_$Architecture=PASS"
     if ($RestartProfileCheck -eq 'true') {
       # Qualify a supported clean restart; force-kill can trigger foobar recovery/safe mode.
-      if (-not $proc.CloseMainWindow()) { throw 'Disposable foobar has no graceful main-window close path.' }
+      $closeByWindow = $proc.CloseMainWindow()
+      if (-not $closeByWindow) {
+        # A portable first-run host may have no main window handle yet. The
+        # official CLI /exit goes through foobar's normal shutdown path.
+        Write-Host "HOST_CLOSE_WINDOW_$Architecture=UNAVAILABLE_FALLBACK_CLI_EXIT"
+        $exitCommand = Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList '/exit' -PassThru
+        if (-not $exitCommand.WaitForExit(15000) -or $exitCommand.ExitCode -ne 0) {
+          throw 'Disposable foobar refused graceful /exit command.'
+        }
+      }
       if (-not $proc.WaitForExit(15000)) { throw 'Disposable foobar did not shut down gracefully.' }
       Write-Host "HOST_GRACEFUL_STOP_$Architecture=PASS"
       $proc = Start-Process -FilePath $exe -WorkingDirectory $target -PassThru

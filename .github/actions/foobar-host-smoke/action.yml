@@ -14,7 +14,7 @@ inputs:
     default: ""
   restart-profile-check:
     required: false
-    description: "Opt-in: force-stop disposable foobar after first profile check, restart same profile and repeat verification"
+    description: "Opt-in: close disposable foobar gracefully, restart the same profile and repeat verification"
     default: "false"
 runs:
   using: composite

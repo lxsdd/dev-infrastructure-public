@@ -31,24 +31,31 @@ function Test-WindowsUiAccessibility {
         }
         $condition = [System.Windows.Automation.PropertyCondition]::new($Property, $Expected)
         $matching = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
-        if ($matching.Count -ne 1) {
+        # WPF can expose both a button and its nested text with the same
+        # accessible Name. Names describe the user-facing label, NOT identity.
+        # AutomationId, in contrast, must resolve to exactly one control.
+        if ($matching.Count -eq 0) {
+            $issues.Add(($Tag + '_MISSING'))
+            return
+        }
+        if ($Tag -eq 'AUTOMATION_ID' -and $matching.Count -ne 1) {
             $issues.Add(($Tag + '_COUNT_NOT_ONE'))
             return
         }
-        $element = $matching.Item(0)
-        if ($element.Current.IsOffscreen) {
-            $issues.Add(($Tag + '_OFFSCREEN'))
-            return
+        $visibleValid = $false
+        foreach ($element in $matching) {
+            if ($element.Current.IsOffscreen) { continue }
+            $rect = $element.Current.BoundingRectangle
+            if ($rect.Width -le 2 -or $rect.Height -le 2) { continue }
+            $intersection = [System.Windows.Rect]::Intersect($windowBounds, $rect)
+            if (-not $intersection.IsEmpty -and
+                $intersection.Width -ge 2 -and $intersection.Height -ge 2) {
+                $visibleValid = $true
+                break
+            }
         }
-        $rect = $element.Current.BoundingRectangle
-        if ($rect.Width -le 2 -or $rect.Height -le 2) {
-            $issues.Add(($Tag + '_INVALID_BOUNDS'))
-            return
-        }
-        $intersection = [System.Windows.Rect]::Intersect($windowBounds, $rect)
-        if ($intersection.IsEmpty -or
-            $intersection.Width -lt 2 -or $intersection.Height -lt 2) {
-            $issues.Add(($Tag + '_OUTSIDE_WINDOW'))
+        if (-not $visibleValid) {
+            $issues.Add(($Tag + '_NO_VISIBLE_VALID_BOUNDS'))
         }
     }
     foreach ($name in $RequiredNames) {

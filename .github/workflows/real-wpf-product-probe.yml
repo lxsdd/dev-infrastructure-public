@@ -16,6 +16,16 @@ jobs:
   pinned-real-window:
     runs-on: windows-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: baseline-1024-clipping
+            source_sha: 81e8aa8fb6d8aa2f97a9e1383db7b1b71dd9ce53
+            require_fit: 'false'
+          - case: proposed-compact-workarea
+            source_sha: 7892386bb2e2e790326fec0c7a82ce54a59b3d8a
+            require_fit: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: lxsdd/rekordbox-mytag-sync
-          ref: 81e8aa8fb6d8aa2f97a9e1383db7b1b71dd9ce53
+          ref: ${{ matrix.source_sha }}
           path: product
           persist-credentials: false
       - name: Verify preinstalled .NET 10 Windows SDK on hosted runner
@@ -54,5 +64,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = Join-Path $env:GITHUB_WORKSPACE 'product/src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/rekordbox MyTagSync.exe'
-          & ./scripts/real-wpf-product-probe.ps1 -ProductExe $exe
+          $expectFit = '${{ matrix.require_fit }}' -eq 'true'
+          Write-Host ('WINDOW_CASE=' + '${{ matrix.case }}')
+          & ./scripts/real-wpf-product-probe.ps1 -ProductExe $exe -RequireWindowFits:$expectFit
           if (-not $?) { throw 'Real WPF window probe failed.' }

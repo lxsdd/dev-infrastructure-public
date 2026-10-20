@@ -563,8 +563,9 @@ FILE "synthetic-8k-silence.wav" WAVE
         throw 'Multi-FILE host test requires the qualified external CUE comparison path.'
       }
       # Two separate disposable audio sources (both valid synthetic silent
-      # WAVs). TRACK 01 is deliberately repeated across FILE references:
-      # this is not proof of a unique remote release track position.
+      # WAVs). Native foobar requires sequential TRACK 01/02 here. A
+      # separate pure bridge test blocks repeated TRACK 01 across FILE
+      # references as ambiguous, with no invented edition position.
       $second=Join-Path $dir 'synthetic-second.wav'
       if(Test-Path -LiteralPath $second) {
         throw 'Refusing to replace a previously existing WAV fixture.'
@@ -586,7 +587,7 @@ FILE "synthetic-8k-silence.wav" WAVE
     TITLE "Runner (Extended Mix)"
     INDEX 01 00:00:00
 FILE "synthetic-second.wav" WAVE
-  TRACK 01 AUDIO
+  TRACK 02 AUDIO
     TITLE "Runner (Radio Edit)"
     INDEX 01 00:00:00
 '@
@@ -630,7 +631,7 @@ FILE "synthetic-second.wav" WAVE
       if($originals -lt 7) {
         throw "Multi-FILE CUE original source inventory incomplete ($originals)."
       }
-      Write-Host "HOST_MULTIFILE_CUE_INSPECT_$Architecture=PASS (2 independent FILEs, 2 repeated CUE track numbers)"
+      Write-Host "HOST_MULTIFILE_CUE_INSPECT_$Architecture=PASS (2 independent FILEs, sequential native track numbering)"
       $edition=@'
 @beatport-release-json
 {"id":988,"name":"Runner Multi-FILE EP","track_count":2,"new_release_date":"2026-10-16"}

@@ -58,7 +58,7 @@ inputs:
     default: "false"
   multi-file-cue-host-probe:
     required: false
-    description: "Opt-in distinct disposable WAV FILE references with repeated TRACK 01: inspect native CUE, edition compare, no-write assertions"
+    description: "Opt-in distinct disposable WAV FILE references with sequential TRACK 01/02: inspect real native CUE, edition compare, no-write assertions"
     default: "false"
 runs:
   using: composite

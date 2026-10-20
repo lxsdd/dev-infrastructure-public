@@ -48,7 +48,11 @@ def run_case(*, private=False, runs=0, pr_foreign=False, changed=False,
         assert timeout == 20
         assert req.get_header("Authorization") == "Bearer synthetic-only"
         parsed = urlparse(req.full_url)
-        path = unquote(parsed.path).split("/repos/lxsdd/synthetic/", 1)[1]
+        # GitHub returns HTTP 404 for a trailing slash on the root REST
+        # endpoint: /repos/owner/repo/ is NOT /repos/owner/repo.
+        base_path = "/repos/lxsdd/synthetic"
+        assert parsed.path == base_path or parsed.path.startswith(base_path + "/")
+        path = unquote(parsed.path[len(base_path):]).lstrip("/")
         if path == "":
             return FakeResponse({"private": private})
         if path == "actions/workflows/build.yml":

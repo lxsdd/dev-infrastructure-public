@@ -90,3 +90,51 @@ WPF-Produktdialog aus einer unveränderten, synthetischen Testumgebung mit
 `PRODUCTION_WINDOW_GEOMETRY_PASS`, danach optional sichere visuelle
 Bildweitergabe und finale Nutzersichtung. Simulierter GUI-Pilot !=
 Produktionsdialog.
+
+
+## Echter produktiver WPF-Fenstertest (2026-10-20)
+
+**Erstmals PASS am wirklichen MyTagSync-Hauptfenster** auf einem kurzlebigen
+GitHub-hosted Windows-Runner, unabhängig von den bestehenden produktspezifischen
+`--ui-smoke`-/Offscreen-Layout-Tests.
+
+- Im selben isolierten Runner wurde ausschließlich der unveränderliche,
+  öffentliche MyTagSync-Commit
+  `81e8aa8fb6d8aa2f97a9e1383db7b1b71dd9ce53` ausgecheckt.
+- Das Projekt-`global.json` fixiert das SDK `10.0.401`. `dotnet` wird
+  **im Produktverzeichnis** ausgeführt, damit die Lockfile-Paketprüfung die
+  passende, im Projekt vorgegebene .NET-Version statt der globalen Default-SDK
+  verwendet. `--locked-mode` bleibt verpflichtend.
+- Der echte WPF-Release-Build ist erfolgreich, Fehleranzahl 0. Das Hauptfenster
+  `rekordbox MyTagSync` wurde angezeigt und über seine HWND/UIA-Root gefunden.
+  Ein echtes sichtbares Textfeld (`BridgeDirectoryTextBox`) und
+  `DiscoverSourceButton` haben gültige Bounds, gültige Accessibility-Namen
+  und jeweils **eine eindeutige AutomationId**.
+- Das tatsächliche Eingabefeld akzeptierte UIA-Tastaturfokus. Keine
+  Source-/Database-/Apply-/Restore-Aktion wurde ausgeführt.
+- Ein Button und sein WPF-Inhalt können denselben Accessibility-`Name`
+  besitzen. Das ist erlaubt; nur die AutomationId muss für gezielte Aktionen
+  eindeutig sein. Der gemeinsame Adapter hat dafür weiterhin negative
+  Tests auf komplett fehlende Namen und IDs.
+- GitHub-[Lauf 39482829350](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39482829350)
+  **SUCCESS**, **0 öffentliche Artefakte**. Auch der synthetische Grafiktest
+  [39482829408](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39482829408)
+  und die öffentliche Infrastruktur-Baseline
+  [39482829723](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39482829723)
+  bestanden am gleichen Quellstand.
+
+**Echte Layoutgrenze entdeckt:** Die Runner-Arbeitsfläche ist
+**1024 × 720**. MyTagSync setzt im produktiven XAML
+`MinWidth=1050` und `MinHeight=700`; das Fenster kann bei dieser
+Auflösung nicht vollständig in der Arbeitsfläche liegen.
+`PRODUCTION_WPF_WINDOW_FITS_WORKAREA=LIMITED_BY_DISPLAY_RESOLUTION` ist
+ein bewusst separat protokollierter Befund, **kein** optischer Layout-PASS.
+Der Befund ist an die Produktautomatisierung weitergegeben:
+[MyTagSync Issue #7, Befund 6299238654](https://github.com/lxsdd/rekordbox-mytag-sync/issues/7#issuecomment-6299238654).
+
+**Offen:** echte 100–200-%-Windows-DPI-Wechsel, visuelle Screenshots und
+menschliche Bildbeurteilung, Dark Mode, echte Touchpad-Gesten,
+multimonitorige Fensterpositionierung und tatsächliche Endgerätabnahme.
+Der produktive CI-Test fotografiert keinen privaten Bildschirm und stellt
+keine Benutzerprofile, Musiksammlung oder Datenbank zur Verfügung.
+Dies ist ein quellcodegebundener Infrastruktur-Draft, keine Produktfreigabe.

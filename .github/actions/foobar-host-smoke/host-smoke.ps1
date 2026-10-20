@@ -452,11 +452,16 @@ try {
           throw 'Beatport edition has no native field detail rows.'
         }
         $mixes=@()
+        $syntheticRows=[System.Collections.Generic.List[string]]::new()
         $blockedMixes=0
         for($row=0;$row -lt [Math]::Min($groups,24);$row++) {
           $group=[FoobarHostWindow]::ListText($window,$ClipboardListId,$row,0)
           $origin=[FoobarHostWindow]::ListText($window,$ClipboardListId,$row,3)
           $status=[FoobarHostWindow]::ListText($window,$ClipboardListId,$row,4)
+          # Only invented offline fixture data is displayed in these failure
+          # diagnostics; never inspect or log provider tokens or real catalog.
+          $syntheticRows.Add(('{0}: name=[{1}] source=[{2}] status=[{3}]' -f
+             $row,$group,$origin,$status))
           if($group -eq 'Release Track 1' -or $group -eq 'Release Track 2') {
             if($origin -ne 'Pasted: beatport' -or $status -ne 'Unmatched') {
               throw "Native mix identity/provenance/status mismatch ($group, $origin, $status)."
@@ -467,6 +472,8 @@ try {
         }
         if($mixes.Count -ne 2 -or ($mixes | Sort-Object -Unique).Count -ne 2 -or
            $blockedMixes -ne 2) {
+          Write-Host ("HOST_SYNTHETIC_BEATPORT_CONTENT_DIAGNOSTIC=" +
+            [string]::Join('; ', $syntheticRows))
           throw "Native Beatport release tracks not individually represented as blocked evidence: $($mixes.Count)"
         }
         Write-Host "HOST_BEATPORT_NATIVE_CONTENT_$Architecture=PASS (both unmapped mix identities, pasted provider, blocked)"

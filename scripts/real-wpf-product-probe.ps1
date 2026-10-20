@@ -18,6 +18,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class ProductionWindowProbe {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
 }
 '@
 if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
@@ -201,6 +202,57 @@ try {
         }
     }
     Write-Host 'PRODUCTION_WPF_UNSAFE_ACTIONS_DISABLED=PASS'
+    # Resize the actual WPF MainWindow, not a synthetic font or OS DPI.
+    # Only select Source; no search, inspection, previews or writes.
+    $sourceQuery = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty, 'Source')
+    $sourceTabs = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $sourceQuery) |
+        Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem' })
+    if ($sourceTabs.Count -ne 1) { throw 'Real Source tab is not uniquely accessible.' }
+    $sourceTabPattern = [System.Windows.Automation.SelectionItemPattern]$sourceTabs[0].GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $sourceTabPattern.Select()
+    Start-Sleep -Milliseconds 150
+    foreach ($shape in @(
+        @{ Width = 920; Height = 640; Tag = '920x640' },
+        @{ Width = 1000; Height = 700; Tag = '1000x700' }
+    )) {
+        $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        if (-not [ProductionWindowProbe]::SetWindowPos(
+            $handle, [IntPtr]::Zero, [int]($area.Left+8), [int]($area.Top+8),
+            [int]$shape.Width, [int]$shape.Height, [uint32]4)) {
+            throw 'Real product resize failed.'
+        }
+        Start-Sleep -Milliseconds 280
+        $actual = $root.Current.BoundingRectangle
+        if ($actual.Left -lt $area.Left -or $actual.Top -lt $area.Top -or
+            $actual.Right -gt $area.Right -or $actual.Bottom -gt $area.Bottom) {
+            throw ('Window exceeds physical workarea at ' + $shape.Tag)
+        }
+        $ids = @('BridgeDirectoryTextBox','DiscoverSourceButton','InspectSourceButton')
+        $result = Test-WindowsUiAccessibility -WindowHandle $handle -RequiredAutomationIds $ids
+        if (-not $result.Passed) {
+            throw ('Source UIA failed at ' + $shape.Tag + ': ' + ($result.Issues -join ','))
+        }
+        $boxes = @()
+        foreach ($id in $ids) {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
+            $element = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+            if ($null -eq $element) { throw 'Expected Source control vanished after resize.' }
+            $boxes += $element.Current.BoundingRectangle
+        }
+        for ($i = 0; $i -lt $boxes.Count; $i++) {
+            for ($k = $i + 1; $k -lt $boxes.Count; $k++) {
+                $intersection = [System.Windows.Rect]::Intersect($boxes[$i], $boxes[$k])
+                if (-not $intersection.IsEmpty -and
+                    $intersection.Width -gt 2 -and $intersection.Height -gt 2) {
+                    throw ('Visible Source controls overlap at ' + $shape.Tag)
+                }
+            }
+        }
+        Write-Host ('PRODUCTION_WPF_COMPACT_RESIZE_' + $shape.Tag + '=PASS')
+    }
     $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $rect = $root.Current.BoundingRectangle
     $windowFits = $rect.Left -ge $workArea.Left -and $rect.Top -ge $workArea.Top -and

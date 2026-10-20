@@ -156,12 +156,66 @@ try {
         $mouse = 'UNAVAILABLE_' + $_.Exception.GetType().Name
     }
     Write-Host "SYNTHETIC_MOUSE_INPUT=$mouse"
+    # Font/layout pressure at synthetic scale factors does not change
+    # Windows DPI; it isolates the shared geometry regression mechanics.
+    $scaledLayouts = New-Object 'System.Collections.Generic.List[string]'
+    $baseFont = $button.Font
+    $baseWindowSize = $form.ClientSize
+    $baseButtonSize = $button.Size
+    $baseButtonLocation = $button.Location
+    $baseTextSize = $textBox.Size
+    $baseTextLocation = $textBox.Location
+    try {
+        foreach ($factor in @(1.0, 1.25, 1.5, 2.0)) {
+            $form.ClientSize = New-Object System.Drawing.Size(
+                ([int][math]::Round(300 * $factor)),
+                ([int][math]::Round(180 * $factor)))
+            $button.Location = New-Object System.Drawing.Point(
+                ([int][math]::Round(12 * $factor)),
+                ([int][math]::Round(12 * $factor)))
+            $button.Size = New-Object System.Drawing.Size(
+                ([int][math]::Round(160 * $factor)),
+                ([int][math]::Round(35 * $factor)))
+            $textBox.Location = New-Object System.Drawing.Point(
+                ([int][math]::Round(12 * $factor)),
+                ([int][math]::Round(64 * $factor)))
+            $textBox.Size = New-Object System.Drawing.Size(
+                ([int][math]::Round(160 * $factor)),
+                ([int][math]::Round(27 * $factor)))
+            $newFont = New-Object System.Drawing.Font(
+                $baseFont.FontFamily, ([single]($baseFont.Size * $factor)),
+                $baseFont.Style, $baseFont.Unit)
+            $button.Font = $newFont
+            [System.Windows.Forms.Application]::DoEvents()
+            $check = Get-SafeDesktopLayoutDiagnostics -Window $form -Controls @($button, $textBox)
+            $scaledLayouts.Add($(if ($check.Passed) { 'PASS' } else { 'FAIL' }))
+        }
+    } finally {
+        $button.Font = $baseFont
+        $form.ClientSize = $baseWindowSize
+        $button.Size = $baseButtonSize
+        $button.Location = $baseButtonLocation
+        $textBox.Size = $baseTextSize
+        $textBox.Location = $baseTextLocation
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    $scale = if (@($scaledLayouts | Where-Object { $_ -ne 'PASS' }).Count -eq 0 -and
+        $scaledLayouts.Count -eq 4) { 'PASS' } else { 'FAIL' }
+    Write-Host "SYNTHETIC_SCALED_LAYOUT_100_125_150_200=$scale"
+    Write-Host 'ACTUAL_SYSTEM_DPI_MATRIX=NOT_TESTED'
     if ($uia -eq 'PASS' -and $pixel -eq 'PASS' -and $mouse -eq 'PASS' -and
         $keyboard -eq 'PASS' -and $layout -eq 'PASS' -and $negative -eq 'PASS' -and
+        $scale -eq 'PASS' -and
         $hasInputDesktop -and $interactive) {
         Write-Host 'GRAPHICS_SESSION_CLASS=INTERACTIVE_UIA_MOUSE_KEYBOARD_AND_GEOMETRY_PASS'
     } else {
         Write-Host 'GRAPHICS_SESSION_CLASS=PARTIAL_DESKTOP_CAPABILITY'
+    }
+    if ($uia -ne 'PASS' -or $pixel -ne 'PASS' -or $mouse -ne 'PASS' -or
+        $keyboard -ne 'PASS' -or $layout -ne 'PASS' -or
+        $negative -ne 'PASS' -or $scale -ne 'PASS' -or
+        -not $hasInputDesktop -or -not $interactive) {
+        throw 'FAIL-CLOSED: runner does not satisfy interactive UIA, screenshot pixel, mouse, keyboard, positive+negative geometry and scaled-layout gates.'
     }
     Write-Host 'SAFE_PROBE=PASS (no production app, no external upload, no screenshot saved)'
 } finally {

@@ -14,7 +14,7 @@ Add-Type -AssemblyName UIAutomationTypes
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-internal static class ProductionWindowProbe {
+public static class ProductionWindowProbe {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool SetForegroundWindow(IntPtr hwnd);
 }
 '@

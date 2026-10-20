@@ -9,6 +9,8 @@ param(
   [string]$OfflineClipboardTest = '',
   [int]$ClipboardButtonId = 0,
   [int]$ClipboardListId = 0,
+  [bool]$BeatportEditionProbe = $false,
+  [bool]$StalePhysicalProbe = $false,
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -79,6 +81,17 @@ public static class FoobarHostWindow {
     if(SendMessageTimeoutW(list,0x1004,IntPtr.Zero,IntPtr.Zero,2,5000,out count)==IntPtr.Zero)
       throw new InvalidOperationException("Native candidate ListView did not respond.");
     return checked((int)count.ToInt64());
+  }
+  public static bool Enabled(IntPtr dialog,int id) {
+    var control=GetDlgItem(dialog,id);
+    return control!=IntPtr.Zero && IsWindowEnabled(control);
+  }
+  public static string Text(IntPtr hwnd,int id) {
+    var control=id==0?hwnd:GetDlgItem(hwnd,id);
+    if(control==IntPtr.Zero) return "";
+    var text=new StringBuilder(1024);
+    GetWindowTextW(control,text,text.Capacity);
+    return text.ToString();
   }
   public static string[] Describe(uint pid) {
     var windows=new System.Collections.Generic.List<string>();
@@ -268,6 +281,38 @@ try {
         Set-Clipboard -Value '' -ErrorAction SilentlyContinue
       }
     }
+    if($BeatportEditionProbe) {
+      if(-not $OfflineClipboardTest -or $ClipboardButtonId -le 0 -or $ClipboardListId -le 0) {
+        throw 'Beatport probe requires qualified earlier synthetic clipboard import.'
+      }
+      # Completely fabricated, user-declared offline edition: not official API.
+      # Two independent recording IDs, distinct mix versions and one exact
+      # edition ID. The synthetic 1s WAV does NOT match either recording;
+      # the native field list must therefore remain evidence-only.
+      $beatport=@'
+@beatport-release-json
+{"id":987,"name":"Runner EP","track_count":2,"new_release_date":"2026-10-16"}
+@beatport-tracks-json
+{"count":2,"results":[{"id":321,"name":"Runner","mix_name":"Extended Mix","number":1,"artists":[{"name":"Example DJ"}],"length_ms":402500,"release":{"id":987,"name":"Runner EP"}},{"id":322,"name":"Runner","mix_name":"Radio Edit","number":2,"artists":[{"name":"Example DJ"}],"length_ms":202500,"release":{"id":987,"name":"Runner EP"}}]}
+'@
+      try {
+        Set-Clipboard -Value $beatport -ErrorAction Stop
+        if(-not [FoobarHostWindow]::Click($window,$ClipboardButtonId)) {
+          throw 'Beatport release import button not available in real Studio.'
+        }
+        $groups=[FoobarHostWindow]::ListCount($window,$ClipboardListId)
+        $hint=[FoobarHostWindow]::Text($window,272)
+        if($groups -lt 3 -or $hint -notmatch '^Release details and tentative CUE assignment') {
+          throw "Beatport release UI was not populated ($groups groups; unexpected hint: $hint)."
+        }
+        if([FoobarHostWindow]::ListCount($window,294) -lt 1) {
+          throw 'Beatport edition has no native field detail rows.'
+        }
+        Write-Host "HOST_BEATPORT_EXACT_EDITION_COMPARE_$Architecture=PASS (synthetic offline read-only evidence)"
+      } finally {
+        Set-Clipboard -Value '' -ErrorAction SilentlyContinue
+      }
+    }
     $forward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
     if(-not $forward.WaitForExit(15000) -or $forward.ExitCode -ne 0) {
       throw 'Repeat context command failed.'
@@ -281,6 +326,40 @@ try {
     Write-Host "HOST_WORKSPACE_REUSE_$Architecture=PASS"
     Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
     Write-Host "HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED_$Architecture=PASS"
+    if($StalePhysicalProbe) {
+      if(-not $OfflineClipboardTest -or $ClipboardButtonId -le 0 -or
+         -not [FoobarHostWindow]::Enabled($window,$ClipboardButtonId)) {
+        throw 'Cannot qualify stale source gate without a previously working native Import button.'
+      }
+      # Intentional mutation of ONLY disposable generated runner fixture.
+      # Previously verified original WAV hash/timestamp stay recorded above.
+      $file=[IO.File]::Open($fixture,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,
+                            [IO.FileShare]::ReadWrite)
+      try {
+        $null=$file.Seek(-1,[IO.SeekOrigin]::End)
+        $value=$file.ReadByte()
+        $null=$file.Seek(-1,[IO.SeekOrigin]::End)
+        $file.WriteByte([byte]($value -bxor 1))
+      } finally { $file.Dispose() }
+      [IO.File]::SetLastWriteTimeUtc($fixture,([DateTime]::UtcNow).AddMinutes(2))
+      # A separate snapshot guard must reject disk-only changes even where
+      # the foobar cached file_info has not been refreshed.
+      Set-Clipboard -Value $OfflineClipboardTest -ErrorAction Stop
+      try {
+        if(-not [FoobarHostWindow]::Click($window,$ClipboardButtonId)) {
+          throw 'Failed to deliver stale-source action to real Studio.'
+        }
+        Start-Sleep -Milliseconds 200
+        $title=[FoobarHostWindow]::Text($window,0)
+        if($title -ne 'Music Metadata Studio - STALE snapshot (Read-only)' -or
+           [FoobarHostWindow]::Enabled($window,$ClipboardButtonId)) {
+          throw "Disk mutation was not rejected by modeless Studio (title=$title)."
+        }
+        Write-Host "HOST_DISK_STALE_LOCKDOWN_$Architecture=PASS (deliberately changed disposable WAV)"
+      } finally {
+        Set-Clipboard -Value '' -ErrorAction SilentlyContinue
+      }
+    }
     Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"
     Write-Host "FOOBAR_UI_$Architecture=PARTIAL (open, controls, reuse only)"
   } else {

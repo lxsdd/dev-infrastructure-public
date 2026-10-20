@@ -32,6 +32,14 @@ inputs:
     required: false
     description: Native ID of existing read-only candidate field ListView
     default: "0"
+  beatport-edition-host-probe:
+    required: false
+    description: "Opt-in offline synthetic complete Beatport JSON edition with two distinct mixes"
+    default: "false"
+  stale-physical-host-probe:
+    required: false
+    description: "Opt-in synthetic WAV mutation after no-write verification; require stale UI lockdown"
+    default: "false"
 runs:
   using: composite
   steps:
@@ -47,5 +55,7 @@ runs:
         FB2K_OFFLINE_CLIPBOARD_TEST: ${{ inputs.offline-clipboard-test }}
         FB2K_CLIPBOARD_BUTTON_ID: ${{ inputs.clipboard-button-id }}
         FB2K_CLIPBOARD_LIST_ID: ${{ inputs.clipboard-list-id }}
+        FB2K_BEATPORT_EDITION_PROBE: ${{ inputs.beatport-edition-host-probe }}
+        FB2K_STALE_PHYSICAL_PROBE: ${{ inputs.stale-physical-host-probe }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -OfflineClipboardTest $env:FB2K_OFFLINE_CLIPBOARD_TEST -ClipboardButtonId ([int]$env:FB2K_CLIPBOARD_BUTTON_ID) -ClipboardListId ([int]$env:FB2K_CLIPBOARD_LIST_ID)
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -OfflineClipboardTest $env:FB2K_OFFLINE_CLIPBOARD_TEST -ClipboardButtonId ([int]$env:FB2K_CLIPBOARD_BUTTON_ID) -ClipboardListId ([int]$env:FB2K_CLIPBOARD_LIST_ID) -BeatportEditionProbe ($env:FB2K_BEATPORT_EDITION_PROBE -eq 'true') -StalePhysicalProbe ($env:FB2K_STALE_PHYSICAL_PROBE -eq 'true')

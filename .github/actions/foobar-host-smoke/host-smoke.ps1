@@ -92,9 +92,9 @@ public static class FoobarHostWindow {
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool WriteProcessMemory(IntPtr process,IntPtr address,byte[] buffer,IntPtr size,out IntPtr written);
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool ReadProcessMemory(IntPtr process,IntPtr address,byte[] buffer,IntPtr size,out IntPtr read);
   public static string ListText(IntPtr dialog,int id,int row,int column) {
-    // A real native ListView in another process cannot receive a pointer to
-    // OUR memory in LVM_GETITEMTEXTW. Allocate bounded scratch memory in
-    // the disposable foobar host; neither its media nor metadata is written.
+    // LVS_OWNERDATA expressly does NOT support LVM_GETITEMTEXTW.
+    // The actual ListView obtains its content via LVN_GETDISPINFOW.
+    // Query that same production UI callback on the disposable host.
     var list=GetDlgItem(dialog,id);
     if(list==IntPtr.Zero || row<0 || column<0 || column>4 ||
        row>=ListCount(dialog,id)) throw new InvalidOperationException("List item outside native bounds.");
@@ -107,35 +107,52 @@ public static class FoobarHostWindow {
       bool wow64;
       if(!IsWow64Process(process,out wow64)) throw new InvalidOperationException("Cannot determine list process architecture.");
       bool target64=Environment.Is64BitOperatingSystem && !wow64;
-      remote=VirtualAllocEx(process,IntPtr.Zero,(UIntPtr)2048u,0x3000u,0x04u);
-      if(remote==IntPtr.Zero) throw new InvalidOperationException("Cannot allocate temporary list text buffer.");
-      var item=new byte[128];
-      // LVITEMW: mask/iItem/iSubItem/state/stateMask, then pszText/cchTextMax.
-      Buffer.BlockCopy(BitConverter.GetBytes((uint)1),0,item,0,4);  // LVIF_TEXT
-      Buffer.BlockCopy(BitConverter.GetBytes(row),0,item,4,4);
-      Buffer.BlockCopy(BitConverter.GetBytes(column),0,item,8,4);
-      var offset=target64?24:20;
-      long remoteText=checked(remote.ToInt64()+512);
-      byte[] address=target64
-        ?BitConverter.GetBytes(remoteText)
-        :BitConverter.GetBytes(checked((uint)remoteText));
-      Buffer.BlockCopy(address,0,item,offset,address.Length);
-      Buffer.BlockCopy(BitConverter.GetBytes(256),0,item,target64?32:24,4);
+      remote=VirtualAllocEx(process,IntPtr.Zero,(UIntPtr)256u,0x3000u,0x04u);
+      if(remote==IntPtr.Zero) throw new InvalidOperationException("Cannot allocate native display callback buffer.");
+      // NMHDR(hwndFrom,idFrom,code) + LVITEMW(mask,row,column,...).
+      // x86 NMHDR=12/LVITEM.pszText offset=20; x64 NMHDR=24/pszText offset=24.
+      int header=target64?24:12;
+      int pointer=header+(target64?24:20);
+      var request=new byte[128];
+      byte[] hwndFrom=target64
+        ?BitConverter.GetBytes(list.ToInt64())
+        :BitConverter.GetBytes(checked((uint)list.ToInt64()));
+      Buffer.BlockCopy(hwndFrom,0,request,0,hwndFrom.Length);
+      byte[] from=target64?BitConverter.GetBytes((ulong)id):BitConverter.GetBytes((uint)id);
+      Buffer.BlockCopy(from,0,request,target64?8:4,from.Length);
+      Buffer.BlockCopy(BitConverter.GetBytes(unchecked((uint)-177)),0,request,target64?16:8,4);
+      Buffer.BlockCopy(BitConverter.GetBytes((uint)1),0,request,header,4); // LVIF_TEXT
+      Buffer.BlockCopy(BitConverter.GetBytes(row),0,request,header+4,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(column),0,request,header+8,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(256),0,request,header+(target64?32:24),4);
       IntPtr length;
-      if(!WriteProcessMemory(process,remote,item,new IntPtr(item.Length),out length)||
-         length.ToInt64()!=item.Length)
-        throw new InvalidOperationException("Cannot initialize native ListView query.");
+      if(!WriteProcessMemory(process,remote,request,new IntPtr(request.Length),out length) ||
+         length.ToInt64()!=request.Length)
+        throw new InvalidOperationException("Cannot initialize native callback request.");
       IntPtr response;
-      // LVM_GETITEMTEXTW. OS sends LVN_GETDISPINFOW for owner-data rows.
-      if(SendMessageTimeoutW(list,0x1073u,new IntPtr(row),remote,2,5000,out response)==IntPtr.Zero)
-        throw new InvalidOperationException("Native ListView text query timed out.");
-      var text=new byte[512];
-      if(!ReadProcessMemory(process,new IntPtr(remoteText),text,new IntPtr(text.Length),out length)||
-         length.ToInt64()!=text.Length)
-        throw new InvalidOperationException("Native ListView returned unreadable text.");
-      var result=Encoding.Unicode.GetString(text);
-      var nul=result.IndexOf('\0');
-      return nul<0?result:result.Substring(0,nul);
+      // WM_NOTIFY with the real ListView HWND and its native control ID.
+      // This is a read-only display lookup, not a fake user click or writer.
+      if(SendMessageTimeoutW(dialog,0x004Eu,new IntPtr(id),remote,2,5000,out response)==IntPtr.Zero)
+        throw new InvalidOperationException("Native virtual-display callback timed out.");
+      var returned=new byte[128];
+      if(!ReadProcessMemory(process,remote,returned,new IntPtr(returned.Length),out length)||
+         length.ToInt64()!=returned.Length)
+        throw new InvalidOperationException("Cannot read native display callback result.");
+      long textPtr=target64
+        ?checked((long)BitConverter.ToUInt64(returned,pointer))
+        :(long)BitConverter.ToUInt32(returned,pointer);
+      if(textPtr==0) throw new InvalidOperationException("Virtual display did not supply a text pointer.");
+      var result=new StringBuilder();
+      for(int i=0;i<256;i++) {
+        var chars=new byte[2];
+        if(!ReadProcessMemory(process,new IntPtr(textPtr+(i*2)),chars,new IntPtr(2),out length)||
+           length.ToInt64()!=2)
+          throw new InvalidOperationException("Cannot read native display text.");
+        char ch=(char)BitConverter.ToUInt16(chars,0);
+        if(ch=='\0') return result.ToString();
+        result.Append(ch);
+      }
+      throw new InvalidOperationException("Native virtual text was not terminated within 256 characters.");
     } finally {
       if(remote!=IntPtr.Zero) VirtualFreeEx(process,remote,UIntPtr.Zero,0x8000u);
       CloseHandle(process);

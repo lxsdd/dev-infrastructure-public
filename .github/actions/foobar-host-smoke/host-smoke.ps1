@@ -84,6 +84,63 @@ public static class FoobarHostWindow {
       throw new InvalidOperationException("Native candidate ListView did not respond.");
     return checked((int)count.ToInt64());
   }
+  [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool IsWow64Process(IntPtr process,out bool wow64);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr VirtualAllocEx(IntPtr process,IntPtr address,UIntPtr size,uint alloc,uint protection);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool VirtualFreeEx(IntPtr process,IntPtr address,UIntPtr size,uint free);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool WriteProcessMemory(IntPtr process,IntPtr address,byte[] buffer,IntPtr size,out IntPtr written);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool ReadProcessMemory(IntPtr process,IntPtr address,byte[] buffer,IntPtr size,out IntPtr read);
+  public static string ListText(IntPtr dialog,int id,int row,int column) {
+    // A real native ListView in another process cannot receive a pointer to
+    // OUR memory in LVM_GETITEMTEXTW. Allocate bounded scratch memory in
+    // the disposable foobar host; neither its media nor metadata is written.
+    var list=GetDlgItem(dialog,id);
+    if(list==IntPtr.Zero || row<0 || column<0 || column>4 ||
+       row>=ListCount(dialog,id)) throw new InvalidOperationException("List item outside native bounds.");
+    uint pid; GetWindowThreadProcessId(list,out pid);
+    if(pid==0) throw new InvalidOperationException("No owner of native list.");
+    var process=OpenProcess(0x0038u,false,pid); // VM_OPERATION|VM_READ|VM_WRITE
+    if(process==IntPtr.Zero) throw new InvalidOperationException("Cannot inspect isolated host ListView.");
+    IntPtr remote=IntPtr.Zero;
+    try {
+      bool wow64;
+      if(!IsWow64Process(process,out wow64)) throw new InvalidOperationException("Cannot determine list process architecture.");
+      bool target64=Environment.Is64BitOperatingSystem && !wow64;
+      remote=VirtualAllocEx(process,IntPtr.Zero,(UIntPtr)2048u,0x3000u,0x04u);
+      if(remote==IntPtr.Zero) throw new InvalidOperationException("Cannot allocate temporary list text buffer.");
+      var item=new byte[128];
+      // LVITEMW: mask/iItem/iSubItem/state/stateMask, then pszText/cchTextMax.
+      Buffer.BlockCopy(BitConverter.GetBytes((uint)1),0,item,0,4);  // LVIF_TEXT
+      Buffer.BlockCopy(BitConverter.GetBytes(row),0,item,4,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(column),0,item,8,4);
+      var offset=target64?24:20;
+      long remoteText=checked(remote.ToInt64()+512);
+      byte[] address=target64
+        ?BitConverter.GetBytes(remoteText)
+        :BitConverter.GetBytes(checked((uint)remoteText));
+      Buffer.BlockCopy(address,0,item,offset,address.Length);
+      Buffer.BlockCopy(BitConverter.GetBytes(256),0,item,target64?32:24,4);
+      IntPtr length;
+      if(!WriteProcessMemory(process,remote,item,new IntPtr(item.Length),out length)||
+         length.ToInt64()!=item.Length)
+        throw new InvalidOperationException("Cannot initialize native ListView query.");
+      IntPtr response;
+      // LVM_GETITEMTEXTW. OS sends LVN_GETDISPINFOW for owner-data rows.
+      if(SendMessageTimeoutW(list,0x1073u,new IntPtr(row),remote,2,5000,out response)==IntPtr.Zero)
+        throw new InvalidOperationException("Native ListView text query timed out.");
+      var text=new byte[512];
+      if(!ReadProcessMemory(process,new IntPtr(remoteText),text,new IntPtr(text.Length),out length)||
+         length.ToInt64()!=text.Length)
+        throw new InvalidOperationException("Native ListView returned unreadable text.");
+      var result=Encoding.Unicode.GetString(text);
+      var nul=result.IndexOf('\0');
+      return nul<0?result:result.Substring(0,nul);
+    } finally {
+      if(remote!=IntPtr.Zero) VirtualFreeEx(process,remote,UIntPtr.Zero,0x8000u);
+      CloseHandle(process);
+    }
+  }
   public static bool Enabled(IntPtr dialog,int id) {
     var control=GetDlgItem(dialog,id);
     return control!=IntPtr.Zero && IsWindowEnabled(control);
@@ -394,6 +451,25 @@ try {
         if([FoobarHostWindow]::ListCount($window,294) -lt 1) {
           throw 'Beatport edition has no native field detail rows.'
         }
+        $mixes=@()
+        $blockedMixes=0
+        for($row=0;$row -lt [Math]::Min($groups,24);$row++) {
+          $group=[FoobarHostWindow]::ListText($window,$ClipboardListId,$row,0)
+          $origin=[FoobarHostWindow]::ListText($window,$ClipboardListId,$row,3)
+          $status=[FoobarHostWindow]::ListText($window,$ClipboardListId,$row,4)
+          if($group -eq 'Release Track 1' -or $group -eq 'Release Track 2') {
+            if($origin -ne 'Pasted: beatport' -or $status -ne 'Unmatched') {
+              throw "Native mix identity/provenance/status mismatch ($group, $origin, $status)."
+            }
+            $mixes+= $group
+            $blockedMixes++
+          }
+        }
+        if($mixes.Count -ne 2 -or ($mixes | Sort-Object -Unique).Count -ne 2 -or
+           $blockedMixes -ne 2) {
+          throw "Native Beatport release tracks not individually represented as blocked evidence: $($mixes.Count)"
+        }
+        Write-Host "HOST_BEATPORT_NATIVE_CONTENT_$Architecture=PASS (both unmapped mix identities, pasted provider, blocked)"
         Write-Host "HOST_BEATPORT_EXACT_EDITION_COMPARE_$Architecture=PASS (synthetic offline read-only evidence)"
       } finally {
         Set-Clipboard -Value '' -ErrorAction SilentlyContinue
@@ -447,7 +523,7 @@ try {
       }
     }
     Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"
-    Write-Host "FOOBAR_UI_$Architecture=PARTIAL (open, controls, reuse only)"
+    Write-Host "FOOBAR_UI_$Architecture=PARTIAL (native read-only UI, edition fields, stale gate; CUE and writer E2E pending)"
   } else {
     Write-Host "FOOBAR_UI_$Architecture=NOT_TESTED"
     Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"

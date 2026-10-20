@@ -48,3 +48,111 @@ jobs:
           echo 'PUBLIC_GRADLE_AGP_RESOLUTION=PASS'
       - name: Security boundary
         run: echo 'No private repository checkout, no private credentials, no proprietary artifacts.'
+
+  cast-public-dependency-contract:
+    # Existing free public GitHub-hosted runner; never access private repository content.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Use preinstalled JDK 17 and checksum-pinned Gradle 8.13
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "${JAVA_HOME_17_X64:-/unavailable}"
+          test -x "$JAVA_HOME_17_X64/bin/javac"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          cd "$RUNNER_TEMP"
+          curl --fail --location --silent --show-error --retry 2 --output gradle-8.13-bin.zip https://services.gradle.org/distributions/gradle-8.13-bin.zip
+          echo '20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78  gradle-8.13-bin.zip' | sha256sum --check
+          unzip -q gradle-8.13-bin.zip
+          echo "$RUNNER_TEMP/gradle-8.13/bin" >> "$GITHUB_PATH"
+      - name: Verify Java Gradle and Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          javac -version
+          gradle --version
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK" && test -d "$SDK"
+          if [ ! -d "$SDK/platforms/android-36" ] || [ ! -d "$SDK/build-tools/35.0.0" ]; then
+            MANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+            test -x "$MANAGER"
+            "$MANAGER" --install 'platforms;android-36' 'build-tools;35.0.0'
+          fi
+          test -f "$SDK/platforms/android-36/android.jar"
+          test -f "$SDK/build-tools/35.0.0/aapt2"
+          echo 'PUBLIC_ANDROID_SDK_36_BUILD_TOOLS_35=PASS'
+      - name: Resolve public AGP 8.13.2 and pinned Cast dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          mkdir -p cast-public-contract
+          cd cast-public-contract
+          cat > settings.gradle <<'SETTINGS'
+          pluginManagement {
+            repositories {
+              google()
+              mavenCentral()
+              gradlePluginPortal()
+            }
+          }
+          rootProject.name = 'cast-public-contract'
+          SETTINGS
+          cat > build.gradle <<'BUILD'
+          plugins {
+            id 'com.android.library' version '8.13.2' apply false
+          }
+          repositories { mavenCentral() }
+          configurations { publishedCastTransport }
+          dependencies {
+            publishedCastTransport 'info.armills.chromecast-java-api-v2:api-v2-raw-request:0.10.4-raw-request-1'
+          }
+          tasks.register('resolvePublishedCastTransport', Copy) {
+            from(configurations.publishedCastTransport)
+            into(layout.buildDirectory.dir('cast-transport'))
+          }
+          BUILD
+          gradle help resolvePublishedCastTransport --no-daemon --no-build-cache --stacktrace
+          echo 'PUBLIC_AGP_8_13_2_RESOLUTION=PASS'
+      - name: Verify published Cast transport bytecode ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/cast-public-contract"
+          JAR="$(find build/cast-transport -maxdepth 1 -type f -name 'api-v2-raw-request-*.jar' -print -quit)"
+          test -n "$JAR" && test -s "$JAR"
+          sha256sum "$JAR"
+          jar tf "$JAR" > jar-entries.txt
+          echo 'PUBLIC_JAR_CHANNEL_CLASSES:'
+          grep -F 'su/litvak/chromecast/api/v2/Channel' jar-entries.txt || true
+          javap -private -classpath "$JAR" 'su.litvak.chromecast.api.v2.Channel' > channel-abi.txt
+          javap -private -classpath "$JAR" 'su.litvak.chromecast.api.v2.Channel$ResultProcessor' > processor-abi.txt
+          javap -private -classpath "$JAR" 'su.litvak.chromecast.api.v2.Channel$AbstractResultProcessor' > abstract-processor-abi.txt
+          echo 'PUBLIC_JAR_CHANNEL_ABI:'
+          grep -E 'requestCounter|requests|startSession|write\\(' channel-abi.txt || true
+          echo 'PUBLIC_JAR_PROCESSOR_ABI:'
+          cat processor-abi.txt
+          echo 'PUBLIC_JAR_ABSTRACT_PROCESSOR_ABI:'
+          cat abstract-processor-abi.txt
+          failed=0
+          for pair in 'requestCounter|channel-abi.txt' 'requests|channel-abi.txt' 'startSession(java.lang.String)|channel-abi.txt' 'write(java.lang.String, java.lang.String, java.lang.String)|channel-abi.txt' ' get() throws |abstract-processor-abi.txt' 'Channel$1|processor-abi.txt' 'extends su.litvak.chromecast.api.v2.Channel$AbstractResultProcessor|processor-abi.txt'; do
+            symbol="${pair%%|*}"
+            filename="${pair##*|}"
+            if grep -Fq "$symbol" "$filename"; then
+              echo "ABI_FOUND: $symbol"
+            else
+              echo "ABI_MISSING: $symbol"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo 'PUBLIC_CAST_JAR_ABI=FAIL'
+            exit 1
+          fi
+          echo 'PUBLIC_CAST_JAR_ABI=PASS'
+          echo 'NO_PRIVATE_REPOSITORIES_CHECKED_OUT=PASS'

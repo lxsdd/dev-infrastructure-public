@@ -48,6 +48,23 @@ jobs:
           $ErrorActionPreference = 'Stop'
           # dotnet selects global.json from the CURRENT DIRECTORY, not the project path.
           # Honor the product's immutable 10.0.401 SDK and locked NuGet graph.
+          $exactSdk = '10.0.401'
+          $foundSdk = @(dotnet --list-sdks | Where-Object { $_ -match '^10[.]0[.]401\s' })
+          if ($foundSdk.Count -eq 0) {
+            # The hosted Windows image can roll to 10.0.402 independently
+            # across matrix jobs. Restore the exact product SDK in RUNNER_TEMP,
+            # never patch the repository global.json or its NuGet lockfile.
+            $installer = Join-Path $env:RUNNER_TEMP 'dotnet-install-exact.ps1'
+            $sdkDir = Join-Path $env:RUNNER_TEMP 'pinned-dotnet-sdk'
+            Invoke-WebRequest -UseBasicParsing -MaximumRedirection 5 -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer
+            & $installer -Version $exactSdk -InstallDir $sdkDir -NoPath
+            if (-not (Test-Path -LiteralPath (Join-Path $sdkDir 'dotnet.exe') -PathType Leaf)) { throw 'Exact temporary SDK installation did not produce dotnet.exe.' }
+            $env:PATH = "$sdkDir;$env:PATH"
+            $env:DOTNET_ROOT = $sdkDir
+            Write-Host 'SDK_EXACT_FALLBACK=RUNNER_TEMP'
+          } else {
+            Write-Host 'SDK_EXACT_FALLBACK=NOT_REQUIRED'
+          }
           Push-Location 'product'
           try {
             $sdk = dotnet --version

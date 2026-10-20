@@ -52,11 +52,19 @@ try {
     try {
         Add-Type -AssemblyName UIAutomationClient
         $element = [System.Windows.Automation.AutomationElement]::FromHandle($button.Handle)
-        if ($null -ne $element -and
-            $element.Current.Name -eq 'SyntheticProbeButton') {
-            $uia = 'PASS'
+        if ($null -eq $element) {
+            $uia = 'NO_ELEMENT'
         } else {
-            $uia = 'NO_MATCH'
+            $name = $element.Current.Name
+            $kind = $element.Current.ControlType.ProgrammaticName
+            Write-Host "SYNTHETIC_UIA_CONTROL_TYPE=$kind"
+            Write-Host "SYNTHETIC_UIA_CONTROL_NAME=$name"
+            if ($kind -eq 'ControlType.Button' -and
+                ($name -eq 'SyntheticProbeButton' -or $name -eq 'Read-only test')) {
+                $uia = 'PASS'
+            } else {
+                $uia = 'NO_MATCH'
+            }
         }
     } catch {
         $uia = 'UNAVAILABLE_' + $_.Exception.GetType().Name

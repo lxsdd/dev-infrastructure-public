@@ -6,6 +6,7 @@ param(
   [string]$ContextCommand = '',
   [string]$ExpectedWindowTitle = '',
   [string]$RequiredControlIds = '',
+  [ValidateSet('reuse', 'diagnostic-no-write')][string]$ProbeMode = 'reuse',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -195,6 +196,13 @@ try {
     }
     # /context_command addresses this specific disposable file, never the user's library.
     $arg='/context_command:"'+$ContextCommand+'" "'+$fixture+'"'
+    if ($ProbeMode -eq 'diagnostic-no-write') {
+      if ($ContextCommand -notmatch 'no tag writes' -or $ExpectedWindowTitle -notmatch 'NO WRITE') {
+        throw 'Diagnostic mode requires explicitly named no-write command and result title.'
+      }
+      # Both files are disposable runner-only fixtures, including the external CUE.
+      $arg += ' "'+$cue+'"'
+    }
     $forward=$null
     try {
       $forward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
@@ -205,7 +213,8 @@ try {
       if ($null -ne $forward -and -not $forward.HasExited) { Stop-Process -Id $forward.Id -Force }
     }
     $window=[IntPtr]::Zero
-    for($i=0;$i -lt 16;$i++) {
+    $pollLimit = if ($ProbeMode -eq 'diagnostic-no-write') { 120 } else { 16 }
+    for($i=0;$i -lt $pollLimit;$i++) {
       Start-Sleep -Milliseconds 500
       $proc.Refresh()
       if($proc.HasExited) { throw 'Host exited while opening the workspace.' }
@@ -247,21 +256,33 @@ try {
     }
     Write-Host "HOST_WORKSPACE_OPEN_$Architecture=PASS"
     Write-Host "HOST_WORKSPACE_CONTROLS_$Architecture=PASS"
-    $forward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
-    if(-not $forward.WaitForExit(15000) -or $forward.ExitCode -ne 0) {
-      throw 'Repeat context command failed.'
+    if ($ProbeMode -eq 'diagnostic-no-write') {
+      # Never repeat an analysis just to test reuse: a second invocation can
+      # create another result dialog. The title and unchanged fixture bytes are
+      # observable evidence, not a BPM accuracy or tag-writer proof.
+      Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+      Assert-FoobarFixtureUnchanged -Path $cue -Before $cueBefore
+      Write-Host "HOST_DIAGNOSTIC_WINDOW_$Architecture=PASS"
+      Write-Host "HOST_DIAGNOSTIC_WAV_CUE_UNCHANGED_$Architecture=PASS"
+      Write-Host "FOOBAR_UI_$Architecture=PARTIAL (diagnostic result window)"
+      Write-Host "MEDIA_WRITE_SAFETY_$Architecture=PARTIAL (synthetic WAV/CUE only)"
+    } else {
+      $forward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
+      if(-not $forward.WaitForExit(15000) -or $forward.ExitCode -ne 0) {
+        throw 'Repeat context command failed.'
+      }
+      Start-Sleep -Seconds 1
+      $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+      if($found.Length -ne 1 -or $found[0] -ne $window -or
+         -not [FoobarHostWindow]::Responsive($window)) {
+        throw 'Modeless Studio workspace was duplicated or blocked.'
+      }
+      Write-Host "HOST_WORKSPACE_REUSE_$Architecture=PASS"
+      Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+      Write-Host "HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED_$Architecture=PASS"
+      Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"
+      Write-Host "FOOBAR_UI_$Architecture=PARTIAL (open, controls, reuse only)"
     }
-    Start-Sleep -Seconds 1
-    $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
-    if($found.Length -ne 1 -or $found[0] -ne $window -or
-       -not [FoobarHostWindow]::Responsive($window)) {
-      throw 'Modeless Studio workspace was duplicated or blocked.'
-    }
-    Write-Host "HOST_WORKSPACE_REUSE_$Architecture=PASS"
-    Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
-    Write-Host "HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED_$Architecture=PASS"
-    Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"
-    Write-Host "FOOBAR_UI_$Architecture=PARTIAL (open, controls, reuse only)"
   } else {
     Write-Host "FOOBAR_UI_$Architecture=NOT_TESTED"
     Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"

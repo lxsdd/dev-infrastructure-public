@@ -27,9 +27,11 @@ jobs:
           ref: 04dbf0d284b752a49d490cc64a49a674325168a8
           path: product
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.401'
+      - name: Verify preinstalled .NET 10 Windows SDK on hosted runner
+        shell: pwsh
+        run: |
+          dotnet --list-sdks
+          if (-not ((dotnet --list-sdks) -match '^10[.]0[.]')) { throw 'This Windows image needs .NET 10 SDK.' }
       - name: Restore pinned product lockfile and build WPF
         shell: pwsh
         run: |

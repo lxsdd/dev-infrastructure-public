@@ -230,6 +230,7 @@ try {
       if($leaf -ne $ContextCommand) {
         Write-Host 'HOST_CONTEXT_ROUTE=RETRY_LEAF_NAME'
         $arg='/context_command:"'+$leaf+'" "'+$fixture+'"'
+        if ($ProbeMode -eq 'diagnostic-no-write') { $arg += ' "'+$cue+'"' }
         $fallback=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
         if(-not $fallback.WaitForExit(15000) -or $fallback.ExitCode -ne 0) {
           throw 'Leaf context launcher refused the synthetic fixture.'

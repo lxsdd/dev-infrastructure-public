@@ -53,6 +53,16 @@ try {
         throw 'Wrong or missing real product window title.'
     }
     Write-Host 'PRODUCTION_WPF_MAIN_WINDOW=PASS'
+    foreach ($check in @(
+        @{ Tag='SOURCE_NAME'; Value='foobar2000 Bridge snapshot directory'; Property=[System.Windows.Automation.AutomationElement]::NameProperty },
+        @{ Tag='FIND_SOURCES_NAME'; Value='Find sources'; Property=[System.Windows.Automation.AutomationElement]::NameProperty },
+        @{ Tag='SOURCE_ID'; Value='BridgeDirectoryTextBox'; Property=[System.Windows.Automation.AutomationElement]::AutomationIdProperty },
+        @{ Tag='FIND_SOURCES_ID'; Value='DiscoverSourceButton'; Property=[System.Windows.Automation.AutomationElement]::AutomationIdProperty }
+    )) {
+        $query = [System.Windows.Automation.PropertyCondition]::new($check.Property, $check.Value)
+        $count = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $query).Count
+        Write-Host ('PRODUCTION_WPF_UIA_' + $check.Tag + '_COUNT=' + $count)
+    }
     $result = Test-WindowsUiAccessibility -WindowHandle $handle -RequiredNames @('foobar2000 Bridge snapshot directory', 'Find sources') -RequiredAutomationIds @('BridgeDirectoryTextBox', 'DiscoverSourceButton')
     if (-not $result.Passed) {
         throw ('Actual WPF accessibility/visible-control geometry failed: ' + ($result.Issues -join ','))

@@ -147,6 +147,37 @@ try {
                 ($controlResult.Issues -join ','))
         }
         Write-Host ('PRODUCTION_WPF_TAB_' + $case.Tag + '_UIA=PASS')
+        if ($case.Tag -eq 'TARGET') {
+            # Real keyboard-only forward/backward tab sequence. Never press
+            # Space/Enter or invoke any Find/DB action.
+            $fieldCondition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
+                'TargetDatabaseTextBox')
+            $targetField = $root.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants, $fieldCondition)
+            if ($null -eq $targetField -or -not $targetField.Current.IsKeyboardFocusable) {
+                throw 'TARGET_KEYBOARD_FIELD_NOT_FOCUSABLE'
+            }
+            $targetField.SetFocus()
+            Start-Sleep -Milliseconds 120
+            if (-not $targetField.Current.HasKeyboardFocus) {
+                throw 'TARGET_KEYBOARD_FIELD_FOCUS_FAILED'
+            }
+            [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+            Start-Sleep -Milliseconds 150
+            $next = [System.Windows.Automation.AutomationElement]::FocusedElement
+            if ($null -eq $next -or
+                $next.Current.AutomationId -ne 'DiscoverTargetButton') {
+                throw 'TARGET_KEYBOARD_FORWARD_TAB_DID_NOT_REACH_FIND_LIBRARIES'
+            }
+            Write-Host 'PRODUCTION_WPF_KEYBOARD_FORWARD_TAB=PASS'
+            [System.Windows.Forms.SendKeys]::SendWait('+{TAB}')
+            Start-Sleep -Milliseconds 150
+            if (-not $targetField.Current.HasKeyboardFocus) {
+                throw 'TARGET_KEYBOARD_SHIFT_TAB_DID_NOT_RETURN_TO_FIELD'
+            }
+            Write-Host 'PRODUCTION_WPF_KEYBOARD_REVERSE_TAB=PASS'
+        }
     }
     # A tab switch must never enable DB writes without explicit validation.
     # Only inspect enabled state. Neither dangerous button is clicked.

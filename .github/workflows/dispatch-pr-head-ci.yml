@@ -74,7 +74,7 @@ jobs:
           }
           def request(method, path, data=None):
               payload = None if data is None else json.dumps(data).encode('utf-8')
-              req = urllib.request.Request(api + '/' + path,
+              req = urllib.request.Request(api + ('/' + path if path else ''),
                   data=payload, headers=headers, method=method)
               if payload is not None:
                   req.add_header('Content-Type', 'application/json')

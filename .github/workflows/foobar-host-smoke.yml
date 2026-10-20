@@ -40,31 +40,23 @@ jobs:
         with:
           architecture: ${{ matrix.architecture }}
 
-  # An exact, already-green Studio source SHA isolates the shared host
-  # adapter change from any concurrent product branch edits. No secrets or
-  # real music. The run MUST validate native field content, not just row count.
-  studio-ownerdata-content:
-    if: github.event_name == 'pull_request'
-    runs-on: windows-2022
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        architecture: [Win32, x64]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - name: Checkout pinned previously green Studio source (public, no secrets)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
         with:
           repository: lxsdd/music-metadata-studio
           ref: a76e54900654e2c350f34ee7bd9c78570d185bc0
           path: studio
           persist-credentials: false
       - uses: microsoft/setup-msbuild@v2
-      - name: Build pinned Music Metadata Studio test-only host component
+        if: github.event_name == 'pull_request'
+      - name: Build pinned read-only Studio Win32/x64 test component
+        if: github.event_name == 'pull_request'
         shell: pwsh
         working-directory: studio
         run: ./scripts/build-foobar.ps1 -Platform '${{ matrix.architecture }}' -Configuration Release -PlatformToolset v143
-      - name: Assert both invented Beatport mix identities and stale lockdown in actual Studio ListView
+      - name: Qualify invented edition mix identities, provenance, and stale-source lockout
+        if: github.event_name == 'pull_request'
         uses: ./.github/actions/foobar-host-smoke
         with:
           architecture: ${{ matrix.architecture }}

@@ -94,3 +94,24 @@ timestamp modification and same-size byte tampering must be detected.
 No real music collection, file association or personal foobar profile is used.
 Other component projects retain their previously pinned shared action SHA
 until the updated host action has passed BOTH actual Windows architectures.
+
+
+## Synthetic external CUE CLI no-write probe
+
+A second disposable ASCII CUE fixture references the WAV created in the
+same temporary directory. It contains two indexed AUDIO tracks with
+00:00:00 and 00:00:40 start positions (75 frames per second). The running
+isolated foobar host receives the CUE via /add /immediate only; no tag,
+artwork, ReplayGain or CUE write commands execute. Both input files' hashes,
+byte sizes and UTC modification ticks are checked again after dispatch.
+
+The separate hard marker is SYNTHETIC_CUE_CLI_NO_WRITE_Win32 or
+SYNTHETIC_CUE_CLI_NO_WRITE_x64. It proves that the host accepted the CLI
+dispatch without crashing or mutating these particular fixtures; it does
+NOT prove that both CUE tracks were parsed into playlist entries, nor that
+components can safely commit physical or embedded CUE changes. All actual
+tag/CUE writer acceptance remains NOT_TESTED.
+
+A pure negative regression verifies that the CUE generator cannot overwrite
+an existing file and that same-length corruption is detected. Like the WAV,
+the CUE exists only within the ephemeral runner and is deleted at cleanup.

@@ -38,6 +38,9 @@ jobs:
       - name: Test synthetic WAVE fixture guards before installing hosts
         shell: pwsh
         run: ./.github/actions/foobar-host-smoke/tests/fixture-tests.ps1
+      - name: Test synthetic external CUE creation and mutation guards
+        shell: pwsh
+        run: ./.github/actions/foobar-host-smoke/tests/cue-fixture-tests.ps1
       - name: Start verified official foobar2000 host ${{ matrix.architecture }}
         uses: ./.github/actions/foobar-host-smoke
         with:

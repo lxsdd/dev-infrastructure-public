@@ -8,6 +8,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'synthetic-wave.ps1')
+. (Join-Path $PSScriptRoot 'synthetic-cue.ps1')
 
 # Immutable official-installer pins from microsoft/winget-pkgs:
 # manifests/p/PeterPawlowski/foobar2000/2.26.1/...installer.yaml
@@ -102,6 +103,26 @@ try {
     if ($null -ne $dispatch) {
       try { if (-not $dispatch.HasExited) { Stop-Process -Id $dispatch.Id -Force -ErrorAction Stop } }
       catch { Write-Warning 'Could not stop disposable /add launcher.' }
+    }
+  }
+  # CUE references only the disposable WAV. No writer or playback commands.
+  $cue=Join-Path $dir 'synthetic-dual.cue'
+  $cueBefore=New-FoobarSyntheticCue -Path $cue
+  $cueDispatch=$null
+  try {
+    $cueDispatch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList @('/add','/immediate',$cue) -PassThru
+    if (-not $cueDispatch.WaitForExit(15000)) { throw "foobar2000 $Architecture did not return from CUE /add" }
+    if ($cueDispatch.ExitCode -ne 0) { throw "foobar2000 $Architecture CUE /add exited $($cueDispatch.ExitCode)" }
+    Start-Sleep -Seconds 2
+    $proc.Refresh()
+    if ($proc.HasExited) { throw "foobar2000 $Architecture exited after CUE /add" }
+    Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+    Assert-FoobarFixtureUnchanged -Path $cue -Before $cueBefore
+    Write-Host "SYNTHETIC_CUE_CLI_NO_WRITE_$Architecture=PASS"
+  } finally {
+    if ($null -ne $cueDispatch) {
+      try { if (-not $cueDispatch.HasExited) { Stop-Process -Id $cueDispatch.Id -Force -ErrorAction Stop } }
+      catch { Write-Warning 'Could not stop disposable CUE /add launcher.' }
     }
   }
   Write-Host "HOST_BOOT_$Architecture=PASS"

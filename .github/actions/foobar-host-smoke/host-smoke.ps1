@@ -39,7 +39,7 @@ if ($ProfileCheckScript) {
   if (-not $ComponentDll) { throw 'A profile probe requires a same-job component DLL.' }
   if ([string]::IsNullOrWhiteSpace($env:GITHUB_WORKSPACE)) { throw 'No isolated checkout directory.' }
   $profileCheck=(Resolve-Path -LiteralPath $ProfileCheckScript -ErrorAction Stop).Path
-  $workspace=[IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd([char]'\\',[char]'/') + [IO.Path]::DirectorySeparatorChar
+  $workspace=[IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd([char]'\',[char]'/') + [IO.Path]::DirectorySeparatorChar
   if (-not $profileCheck.StartsWith($workspace,[StringComparison]::OrdinalIgnoreCase) -or
       [IO.Path]::GetExtension($profileCheck) -ine '.ps1') {
     throw 'Profile probe must be a PowerShell script in the checked-out repository.'

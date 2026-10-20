@@ -208,3 +208,36 @@ Das sind echte **Tastatur- und Accessibility-Prüfungen** eines aktuellen,
 leeren Produktionsfensters in einer flüchtigen Windows-GitHub-Sitzung. Eine
 menschliche Lesbarkeits- und intuitiv-visuelle Prüfung, echte Windows-DPI-
 Umschaltung und Hardware-Touchpadtests bleiben separate offene Kriterien.
+
+
+## Live-WPF-Tests bei kompakten Fenstergrößen
+
+Die Produktionsversion `6974bdd603908adebd17031302244feaa100ae78`
+(.NET SDK 10.0.402, Paketrestore `--locked-mode`) wurde auf dem
+vorhandenen 1024×720-GitHub-Desktop in **zwei tatsächlich veränderten
+Fenstergrößen** geöffnet: `920×640` und `1000×700`.
+
+[GitHub-Lauf #39497862793](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39497862793):
+**SUCCESS, 0 hochgeladene Artefakte**.
+
+Auf jeder tatsächlichen Fenstergröße:
+- Source: Textfeld sowie „Find sources“ und „Inspect selected“ sichtbar,
+  gültige BoundingRects, keinerlei Überschneidungen;
+- Target Library: Ziel-Datenbankfeld und „Find libraries“ sichtbar,
+  eindeutig erreichbar, keine Button-/Feldüberschneidungen;
+- Path matching: „Analyze paths“, „Check selected files“ und
+  „Check all file identities“ sichtbar; deren reale Rechtecke
+  überschneiden sich nicht, auch wenn die Aktionsleiste umbrechen muss;
+- Preview / Changes: „Refresh verified preview“ und
+  „Auto-match and preview“ sichtbar und ohne Überschneidung;
+- Fenster komplett innerhalb der echten Monitor-Arbeitsfläche;
+- Tab-/Umschalt+Tab-Fokus sowie Apply-/Restore-Schreibsperre PASS.
+
+Die Testbefehle ändern die WPF-Fenstergröße mittels `SetWindowPos`,
+schalten Registerkarten mittels `SelectionItemPattern.Select()` um und
+lesen ausschließlich UIA-Namen/AutomationIds/Bildschirmrechtecke. Es
+werden **keine Aktionen ausgeführt**, Dateien gescannt oder Datenbank-
+Änderungen vorgenommen. So entsteht ein sinnvoller struktureller
+Layout-Nachweis, jedoch **keine** tatsächlich umgestellte Windows-
+DPI-Auflösung, kein Screenshot-Designurteil, kein Touchpad- oder
+Mehrmonitor-Hardwaretest.

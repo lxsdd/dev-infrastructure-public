@@ -76,6 +76,33 @@ public static class FoobarHostWindow {
     },IntPtr.Zero);
     return windows.ToArray();
   }
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr h,Callback f,IntPtr p);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassNameW(IntPtr h,StringBuilder b,int cap);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,EntryPoint="SendMessageTimeoutW")]
+    static extern IntPtr SendText(IntPtr h,uint msg,IntPtr size,StringBuilder b,
+                                  uint flags,uint timeout,out IntPtr result);
+  public static string[] DescribePopupText(uint pid,string title) {
+    var lines=new System.Collections.Generic.List<string>();
+    EnumWindows((h,p)=>{
+      uint owner;GetWindowThreadProcessId(h,out owner);
+      if(owner!=pid || !IsWindowVisible(h)) return true;
+      var name=new StringBuilder(256);GetWindowTextW(h,name,256);
+      if(name.ToString()!=title) return true;
+      EnumChildWindows(h,(child,other)=>{
+        var cls=new StringBuilder(128);GetClassNameW(child,cls,128);
+        var data=new StringBuilder(600);
+        IntPtr count;
+        SendText(child,0x000D,new IntPtr(data.Capacity),data,2,1000,out count);
+        var value=data.ToString().Replace("\r"," ").Replace("\n"," ").Trim();
+        if(value.Length>450) value=value.Substring(0,450);
+        if(value.Length>0 && lines.Count<24)
+          lines.Add("class="+cls.ToString()+" text="+value);
+        return true;
+      },IntPtr.Zero);
+      return true;
+    },IntPtr.Zero);
+    return lines.ToArray();
+  }
   public static bool Responsive(IntPtr h) {
     IntPtr value;
     return SendMessageTimeoutW(h,0,IntPtr.Zero,IntPtr.Zero,2,3000,out value)!=IntPtr.Zero;
@@ -262,6 +289,9 @@ try {
     if($window -eq [IntPtr]::Zero) {
       foreach($item in [FoobarHostWindow]::Describe([uint32]$proc.Id)) {
         Write-Host "HOST_WINDOW_DIAGNOSTIC=$item"
+      }
+      foreach($detail in [FoobarHostWindow]::DescribePopupText([uint32]$proc.Id,'Precision CUE Preview')) {
+        Write-Host "HOST_CONTEXT_POPUP_DETAIL=$detail"
       }
       throw 'Real foobar context command did not open Studio (full path and leaf tested).'
     }

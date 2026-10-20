@@ -394,6 +394,17 @@ try {
         if([FoobarHostWindow]::ListCount($window,294) -lt 1) {
           throw 'Beatport edition has no native field detail rows.'
         }
+        # Windows UI Automation is the supported cross-process query for
+        # virtual LVS_OWNERDATA cells. LVM_GETITEMTEXT cannot inspect them.
+        # A separate Windows PowerShell 5.1 process loads the stock UIA
+        # assemblies and probes the read-only real owner-data ListView.
+        $uia="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+        $checker=Join-Path $PSScriptRoot 'verify-native-review-uia.ps1'
+        & $uia -NoProfile -NonInteractive -File $checker -ListHandle ([int64]([FoobarHostWindow]::GetDlgItem($window,$ClipboardListId)))
+        if($LASTEXITCODE -ne 0) {
+          throw 'Real native review rows/provenance failed Windows UI Automation check.'
+        }
+        Write-Host "HOST_BEATPORT_NATIVE_CONTENT_$Architecture=PASS (UIA readback, both blocked mix versions)"
         Write-Host "HOST_BEATPORT_EXACT_EDITION_COMPARE_$Architecture=PASS (synthetic offline read-only evidence)"
       } finally {
         Set-Clipboard -Value '' -ErrorAction SilentlyContinue

@@ -363,12 +363,28 @@ try {
         throw 'Actual native inspect raw destinations command failed.'
       }
       $hint=[FoobarHostWindow]::Text($window,272)
-      if($hint -notmatch '^Raw target inspection: 1 candidate\(s\);' -or
+      if($hint -notmatch '^Raw target inspection: 1 candidate\(s\); present 0, missing 1, unqualified 0, physical source aliases 0\.' -or
          $hint -notmatch 'Final foobar destinations/CUE dependencies UNVERIFIED; no writes') {
-        throw "Native raw candidate observation summary missing: $hint"
+        throw "Missing raw-target observation or final FileOps warning: $hint"
       }
+      Write-Host "HOST_RAW_MISSING_TARGET_$Architecture=PASS (true absent raw candidate; no writes)"
+      # A different Title Formatting projection now names the SAME existing
+      # disposable WAV. Physical identity, not textual equality of paths,
+      # must identify it as a self-targeting conflict.
+      if(-not [FoobarHostWindow]::SetText($window,265,'%filename_ext%') -or
+         -not [FoobarHostWindow]::Click($window,267) -or
+         -not [FoobarHostWindow]::SelectListRow($window,261,0) -or
+         -not [FoobarHostWindow]::Command($window,41300)) {
+        throw 'Native existing source-as-target preflight could not run.'
+      }
+      $self=[FoobarHostWindow]::Text($window,272)
+      if($self -notmatch '^Raw target inspection: 1 candidate\(s\); present 1, missing 0, unqualified 0, physical source aliases 1\.' -or
+         $self -notmatch 'Final foobar destinations/CUE dependencies UNVERIFIED; no writes') {
+        throw "Native source alias was not blocked as a physical conflict: $self"
+      }
+      Write-Host "HOST_RAW_SELF_TARGET_ALIAS_$Architecture=PASS (same physical WAV cannot be treated as new destination)"
       Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
-      Write-Host "HOST_RAW_DESTINATION_INSPECT_$Architecture=PASS (real File locations tab; read-only source/target probes)"
+      Write-Host "HOST_RAW_DESTINATION_INSPECT_$Architecture=PASS (real File locations tab; missing + source-alias observations)"
       if(-not [FoobarHostWindow]::SwitchTab($window,270,0)) {
         throw 'Cannot restore online metadata tab after native File locations check.'
       }

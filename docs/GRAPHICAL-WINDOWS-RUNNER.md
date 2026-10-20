@@ -241,3 +241,46 @@ werden **keine Aktionen ausgeführt**, Dateien gescannt oder Datenbank-
 Layout-Nachweis, jedoch **keine** tatsächlich umgestellte Windows-
 DPI-Auflösung, kein Screenshot-Designurteil, kein Touchpad- oder
 Mehrmonitor-Hardwaretest.
+
+
+## Erweiterte echte WPF-Workflowseiten und Unterregisterkarten (2026-10-20)
+
+Auf dem **tatsächlich laufenden**, unveränderten MyTagSync-WPF-Fenster aus
+Quellcommit 6974bdd603908adebd17031302244feaa100ae78 wurden weitere
+Produktpfade durch reine UIA-Tab-Auswahl geprüft.
+Dies ist ein zusätzliches **read-only** CI-Gate im bestehenden Runner, keine
+Produktänderung und kein Mock-Fenster.
+
+- **PRODUCTION_WPF_TAB_MAPPING_UIA=PASS**: echte Registerkarte **Mapping**,
+  erreichbare MappingGrid, AddMappingButton und RemoveMappingButton.
+- **PRODUCTION_WPF_TAB_DIAGNOSTICS_UIA=PASS**: echte Registerkarte
+  **Diagnostics / Logs**, sichtbare RefreshDiagnosticsButton und
+  DiagnosticsTextBox.
+- **PRODUCTION_WPF_PREVIEW_SUBTAB_CHANGES=PASS**: auf **Preview / Changes**
+  die echte Unterregisterkarte **MyTag changes / conflicts** mit PreviewGrid.
+- **PRODUCTION_WPF_PREVIEW_SUBTAB_EXCLUSIONS=PASS**: die echte Unterregisterkarte
+  **Investigate excluded tracks / MyTags** mit PreviewInvestigationGrid.
+- **PRODUCTION_WPF_PREVIEW_SUBTAB_PHYSICAL_EXCEPTIONS=PASS**: die echte
+  Unterregisterkarte **Physical exceptions (8)** mit PhysicalExceptionsGrid,
+  InvestigatePhysicalExceptionsButton und ExportPhysicalExceptionsButton.
+- **PRODUCTION_WPF_UNQUALIFIED_CSV_EXPORT_DISABLED=PASS**: vor Qualifizierung
+  kein aktiver CSV-Export.
+- **PRODUCTION_WPF_UNSAFE_ACTIONS_STAY_DISABLED_AFTER_NAVIGATION=PASS**:
+  **Apply** und **Restore** bleiben nach sämtlichen Seitenwechseln deaktiviert.
+
+**Exakter ausführender Testcode:** Commit
+[96b4d2abc](https://github.com/lxsdd/dev-infrastructure-public/commit/96b4d2abc2cfffa2d4162684ecb6c026609cd54b).
+Die drei CI-Läufe dieser Code-Spitze:
+[reale WPF-Prüfung 39500863933](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39500863933),
+[synthetische Grafik 39500863935](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39500863935)
+und [Baseline 39500864041](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39500864041)
+jeweils **SUCCESS**, **0 veröffentlichte Artefakte**. Die nachfolgende
+Dokumentation verändert das geprüfte Testprogramm nicht.
+
+Weder Mapping-Zeilen hinzugefügt oder gelöscht noch Diagnostics aktualisiert,
+Dateien inspiziert, Preview erstellt, CSV geschrieben, Einwilligung eingegeben
+oder produktive Apply-/Restore-Aktionen ausgeführt. Es werden nur sichtbare
+UIA-Steuerelement-Identitäten, ihre Rechtecke, ausgewählte Tabs und die
+Sperrzustände gelesen; personenbezogene Inhalte und Pixelbilder gehen nicht
+in Logs oder Artefakte. Echte optische Lesbarkeit, OS-DPI, physische Touchpad-
+Interaktion, Win11-Theme-/Monitorwechsel und Nutzer-Endabnahme bleiben offen.

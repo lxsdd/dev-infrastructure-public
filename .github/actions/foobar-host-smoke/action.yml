@@ -8,6 +8,14 @@ inputs:
     required: false
     description: "Existing same-job DLL; blank performs only HOST_BOOT"
     default: ""
+  context-command:
+    required: false
+    description: "Optional explicitly no-tag-writes context command for disposable fixtures"
+    default: ""
+  expected-window-title:
+    required: false
+    description: "Expected diagnostic window title substring"
+    default: ""
 runs:
   using: composite
   steps:
@@ -17,5 +25,7 @@ runs:
         FB2K_ACTION_ROOT: ${{ github.action_path }}
         FB2K_ARCH: ${{ inputs.architecture }}
         FB2K_COMPONENT: ${{ inputs.component-dll }}
+        FB2K_CONTEXT_COMMAND: ${{ inputs.context-command }}
+        FB2K_CONTEXT_TITLE: ${{ inputs.expected-window-title }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_CONTEXT_TITLE

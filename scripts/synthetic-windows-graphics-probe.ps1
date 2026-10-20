@@ -93,7 +93,7 @@ try {
         $positive = Test-WindowsUiAccessibility -WindowHandle $form.Handle -RequiredNames @('Read-only test')
         $negative = Test-WindowsUiAccessibility -WindowHandle $form.Handle -RequiredNames @('ABSENT_SYNTHETIC_NAME_SENTINEL')
         if ($positive.Passed -and -not $negative.Passed -and
-            ($negative.Issues -contains 'NAME_COUNT_NOT_ONE')) {
+            ($negative.Issues -contains 'NAME_MISSING')) {
             $uiaTree = 'PASS'
         } else {
             $uiaTree = 'BOUNDS_OR_NEGATIVE_REGRESSION'

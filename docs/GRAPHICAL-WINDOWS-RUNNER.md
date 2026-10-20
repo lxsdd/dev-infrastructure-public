@@ -138,3 +138,43 @@ multimonitorige Fensterpositionierung und tatsächliche Endgerätabnahme.
 Der produktive CI-Test fotografiert keinen privaten Bildschirm und stellt
 keine Benutzerprofile, Musiksammlung oder Datenbank zur Verfügung.
 Dies ist ein quellcodegebundener Infrastruktur-Draft, keine Produktfreigabe.
+
+
+## Echte Registerkarten-Navigation und Schreibschutz (20.10.2026)
+
+Nachdem der 1024×720-Fensterzuschnitt des inzwischen bereits separat
+zusammengeführten MyTagSync-PR #67 nachweisbar behoben wurde, erweitert der
+*gemeinsame* Runner seinen produktiven Test – ohne Produktänderungen.
+
+- Testquelle: exakt `3d2ad55d29e1b02c1add95829703a042eca46828`,
+  Produkt-`global.json` SDK `10.0.401` und `--locked-mode`. Falls das
+  GitHub-Windows-Image nur ein neueres SDK anbietet, wird die genaue Version
+  isoliert in `RUNNER_TEMP` installiert, nicht im Repository.
+- [Windows-Grafiklauf #39494722674](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39494722674)
+  **SUCCESS**, **0 Artefakte**.
+- `PRODUCTION_WPF_TAB_TARGET_UIA=PASS`: echte Registerkarte *Target Library*
+  per `SelectionItemPattern.Select()` aktiviert; Textfeld und Button haben
+  sichtbare eindeutige Accessibility-Kennungen.
+- `PRODUCTION_WPF_TAB_PATH_UIA=PASS`: echte Registerkarte *Path matching*
+  aktiviert; Aktionsschaltfläche sichtbar und erreichbar.
+- `PRODUCTION_WPF_TAB_PREVIEW_UIA=PASS`: echte Registerkarte *Preview / Changes*
+  aktiviert; Vorschau-Button sichtbar und erreichbar.
+- `PRODUCTION_WPF_UNSAFE_ACTIONS_DISABLED=PASS`: nach Wechsel zur echten
+  Registerkarte *Apply / Restore* bleiben die produktiven Buttons **Apply**
+  und **Restore** ohne verifizierten Vorgang deaktiviert. Die Buttons wurden
+  **nicht angeklickt**.
+- Weiterhin bestanden: Sichtbares Hauptfenster, 1024×720-Fenstergrenzen,
+  echtes Tastaturfokussieren und nichtleerer grafischer Inhalt
+  (`CopyFromScreen` ausschließlich im Arbeitsspeicher).
+- Derselbe Commit hat zusätzlich [synthetischen Windows-Grafiktest
+  #39494722263](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39494722263)
+  und [Infrastruktur-Baseline #39494722361](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39494722361)
+  bestanden, zusammen **3/3 SUCCESS, 0 Artefakte**.
+
+Der Test schaltet ausdrücklich nur *Registerkarten*, nicht die darunterliegenden
+Aktionen (keine automatische Suche, kein Scan, keine Preview-Erstellung und
+keine Änderung an rekordbox-Daten). Ein solcher `PRODUCTION_UIA_WORKFLOW_PASS`
+ist ein belastbarer Bedienbarkeitstest für reale WPF-Steuerelemente, **kein**
+visueller Abnahmetest zu Lesbarkeit, Schnittstellenästhetik, echten
+Windows-11-Touchpad-Gesten oder systemweiten DPI-Wechseln. Dazu sind
+weitere getrennte Prüfungen notwendig.

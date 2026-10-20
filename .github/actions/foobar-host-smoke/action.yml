@@ -12,6 +12,10 @@ inputs:
     required: false
     description: Optional synthetic WAV native context command
     default: ""
+  context-fixture-format:
+    required: false
+    description: "wav (default) or disposable deterministic mp3 for MP3-only commands"
+    default: wav
   expected-window-title:
     required: false
     description: Exact native workspace title
@@ -30,7 +34,8 @@ runs:
         FB2K_ARCH: ${{ inputs.architecture }}
         FB2K_COMPONENT: ${{ inputs.component-dll }}
         FB2K_CONTEXT_COMMAND: ${{ inputs.context-command }}
+        FB2K_CONTEXT_FIXTURE_FORMAT: ${{ inputs.context-fixture-format }}
         FB2K_EXPECTED_WINDOW_TITLE: ${{ inputs.expected-window-title }}
         FB2K_REQUIRED_CONTROLS: ${{ inputs.required-control-ids }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ContextFixtureFormat $env:FB2K_CONTEXT_FIXTURE_FORMAT -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS

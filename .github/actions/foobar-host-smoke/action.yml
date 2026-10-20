@@ -10,15 +10,15 @@ inputs:
     default: ""
   context-command:
     required: false
-    description: Optional read-only context command for synthetic WAV
+    description: Optional synthetic WAV native context command
     default: ""
   expected-window-title:
     required: false
-    description: Exact native dialog title
+    description: Exact native workspace title
     default: ""
   required-control-ids:
     required: false
-    description: Comma-separated Win32 control IDs
+    description: Comma-separated native control IDs
     default: ""
 runs:
   using: composite

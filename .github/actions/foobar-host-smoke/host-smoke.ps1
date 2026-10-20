@@ -483,9 +483,12 @@ FILE "synthetic-8k-silence.wav" WAVE
         throw 'Actual native Inspect CUE command was not activated.'
       }
       $cueRows=[FoobarHostWindow]::ListCount($cueWindow,$ClipboardListId)
-      if($cueRows -lt 8) {
-        throw "Native CUE original inventory is incomplete ($cueRows rows)."
+      # Original fixture contains 10 CUE facts (global, tracks and FILE).
+      # Studio's read-only physical FILE-reference observer must add 1.
+      if($cueRows -lt 11) {
+        throw "Native external CUE dependency row absent ($cueRows; expected >=11)."
       }
+      Write-Host "HOST_EXTERNAL_CUE_SOURCE_REFERENCES_$Architecture=PASS (CUE originals + physical FILE preflight)"
       Write-Host "HOST_EXTERNAL_CUE_INSPECT_$Architecture=PASS (real native CUE source inventory)"
       # Identical synthetic two-mix edition (no actual Beatport service).
       # The original CUE has two REM GENRE instances, so the result MUST
@@ -628,9 +631,12 @@ FILE "synthetic-second.wav" WAVE
         throw 'Native Multi-FILE CUE Inspect was unavailable.'
       }
       $originals=[FoobarHostWindow]::ListCount($multiWindow,$ClipboardListId)
-      if($originals -lt 7) {
-        throw "Multi-FILE CUE original source inventory incomplete ($originals)."
+      # Multi-FILE fixture contains 9 original CUE facts and 2 independent
+      # physical FILE observations; an uninspected target cannot pass.
+      if($originals -lt 11) {
+        throw "Native Multi-FILE reference observer is incomplete ($originals; expected >=11)."
       }
+      Write-Host "HOST_MULTIFILE_SOURCE_REFERENCES_$Architecture=PASS (2 FILE physical preflight rows)"
       Write-Host "HOST_MULTIFILE_CUE_INSPECT_$Architecture=PASS (2 independent FILEs, sequential native track numbering)"
       $edition=@'
 @beatport-release-json

@@ -70,3 +70,18 @@ Initial candidates after baseline qualification:
 foo_discogger, music-metadata-studio, foo_metadata_isolation-public,
 foo_smart_tempo-public, and foo_dj_library_bridge. Each project retains its
 own copyright/licensing and exact-SHA acceptance gates.
+
+
+## Modeless workspace probe verdict scope
+
+The optional context-menu probe may open a native component dialog on one
+disposable WAV, inspect its control IDs and reuse the modeless window.
+Its fixture integrity check prints HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED=PASS.
+This is a limited proof that that *specific* synthetic WAV remained
+unchanged while the preview dialog was opened and reused.
+
+MEDIA_WRITE_SAFETY remains NOT_TESTED even when the GUI checks pass.
+A writer PASS requires explicit in-host exercising of physical tag/CUE,
+ReplayGain, artwork and negative/no-op writer paths, including pre/post
+file hashes, timestamps and safe rollback. Merely opening a preview is
+never evidence that writer callbacks are correct.

@@ -238,7 +238,8 @@ try {
     }
     Write-Host "HOST_WORKSPACE_REUSE_$Architecture=PASS"
     Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
-    Write-Host "MEDIA_WRITE_SAFETY_$Architecture=PASS"
+    Write-Host "HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED_$Architecture=PASS"
+    Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"
     Write-Host "FOOBAR_UI_$Architecture=PARTIAL (open, controls, reuse only)"
   } else {
     Write-Host "FOOBAR_UI_$Architecture=NOT_TESTED"

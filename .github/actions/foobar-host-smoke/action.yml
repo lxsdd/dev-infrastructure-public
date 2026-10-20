@@ -12,6 +12,10 @@ inputs:
     required: false
     description: "Optional read-only qualification script from this CI checkout for the disposable foobar profile"
     default: ""
+  restart-profile-check:
+    required: false
+    description: "Opt-in: force-stop disposable foobar after first profile check, restart same profile and repeat verification"
+    default: "false"
 runs:
   using: composite
   steps:
@@ -22,5 +26,6 @@ runs:
         FB2K_ARCH: ${{ inputs.architecture }}
         FB2K_COMPONENT: ${{ inputs.component-dll }}
         FB2K_PROFILE_CHECK: ${{ inputs.profile-check-script }}
+        FB2K_RESTART_CHECK: ${{ inputs.restart-profile-check }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ProfileCheckScript $env:FB2K_PROFILE_CHECK
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ProfileCheckScript $env:FB2K_PROFILE_CHECK -RestartProfileCheck $env:FB2K_RESTART_CHECK

@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - scripts/synthetic-windows-graphics-probe.ps1
+      - scripts/windows-ui-geometry.ps1
+      - scripts/windows-ui-accessibility.ps1
       - .github/workflows/synthetic-graphics-probe.yml
 
 permissions:

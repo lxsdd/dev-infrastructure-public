@@ -8,6 +8,18 @@ inputs:
     required: false
     description: "Existing same-job DLL; blank performs only HOST_BOOT"
     default: ""
+  context-command:
+    required: false
+    description: Optional read-only context command for synthetic WAV
+    default: ""
+  expected-window-title:
+    required: false
+    description: Exact native dialog title
+    default: ""
+  required-control-ids:
+    required: false
+    description: Comma-separated Win32 control IDs
+    default: ""
 runs:
   using: composite
   steps:
@@ -17,5 +29,8 @@ runs:
         FB2K_ACTION_ROOT: ${{ github.action_path }}
         FB2K_ARCH: ${{ inputs.architecture }}
         FB2K_COMPONENT: ${{ inputs.component-dll }}
+        FB2K_CONTEXT_COMMAND: ${{ inputs.context-command }}
+        FB2K_EXPECTED_WINDOW_TITLE: ${{ inputs.expected-window-title }}
+        FB2K_REQUIRED_CONTROLS: ${{ inputs.required-control-ids }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS

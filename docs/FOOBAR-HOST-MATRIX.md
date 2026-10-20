@@ -115,3 +115,26 @@ tag/CUE writer acceptance remains NOT_TESTED.
 A pure negative regression verifies that the CUE generator cannot overwrite
 an existing file and that same-length corruption is detected. Like the WAV,
 the CUE exists only within the ephemeral runner and is deleted at cleanup.
+
+
+## Opt-in native modeless workspace smoke (same shared host action)
+
+The same composite action supports three optional inputs:
+context-command, expected-window-title and required-control-ids.
+When a component supplies these, the shared host uses only the disposable
+WAV fixture to invoke that exact native context command, with a bounded
+leaf-only retry if the menu group path is not recognized. It then verifies
+one responsive native top-level window with the expected title and child
+controls and checks that reopening reuses the same modeless HWND.
+
+The additional gates are HOST_WORKSPACE_OPEN, HOST_WORKSPACE_CONTROLS,
+HOST_WORKSPACE_REUSE and HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED. They are
+product-specific GUI/open-only, not a guarantee of correct edit actions.
+FOOBAR_UI is PARTIAL. Crucially, MEDIA_WRITE_SAFETY is still NOT_TESTED:
+no physical or embedded cue writes, tag, replaygain or artwork commits
+are invoked. Later explicit isolated writer fixtures remain required.
+
+The optional probe has already run as an independent Music Metadata Studio
+Win32/x64 draft-PR experiment. This combined version must be qualified
+again in the central x86/x64 baseline and then through an exact-SHA
+native GUI pilot before it can replace the previous immutable action.

@@ -62,6 +62,17 @@ public static class FoobarHostWindow {
     },IntPtr.Zero);
     return windows.ToArray();
   }
+  public static string[] Describe(uint pid) {
+    var windows=new System.Collections.Generic.List<string>();
+    EnumWindows((h,p)=>{
+      uint owner; GetWindowThreadProcessId(h,out owner);
+      if(owner!=pid) return true;
+      var b=new StringBuilder(256);GetWindowTextW(h,b,256);
+      windows.Add("visible="+IsWindowVisible(h)+" title="+b.ToString());
+      return true;
+    },IntPtr.Zero);
+    return windows.ToArray();
+  }
   public static bool Responsive(IntPtr h) {
     IntPtr value;
     return SendMessageTimeoutW(h,0,IntPtr.Zero,IntPtr.Zero,2,3000,out value)!=IntPtr.Zero;
@@ -173,7 +184,7 @@ try {
       if ($null -ne $forward -and -not $forward.HasExited) { Stop-Process -Id $forward.Id -Force }
     }
     $window=[IntPtr]::Zero
-    for($i=0;$i -lt 40;$i++) {
+    for($i=0;$i -lt 16;$i++) {
       Start-Sleep -Milliseconds 500
       $proc.Refresh()
       if($proc.HasExited) { throw 'Host exited while opening the workspace.' }
@@ -181,7 +192,32 @@ try {
       if($found.Length -gt 1) { throw 'Duplicate native workspace.' }
       if($found.Length -eq 1) { $window=$found[0]; break }
     }
-    if($window -eq [IntPtr]::Zero) { throw 'Real foobar context command did not open Studio.' }
+    if($window -eq [IntPtr]::Zero) {
+      # foobar may address context commands by their leaf name rather than
+      # the prefixed Preferences > Context Menu group path. Do not guess a
+      # new provider, file, token or write action: retry only the same leaf.
+      $leaf=($ContextCommand -split '/')[-1]
+      if($leaf -ne $ContextCommand) {
+        Write-Host 'HOST_CONTEXT_ROUTE=RETRY_LEAF_NAME'
+        $arg='/context_command:"'+$leaf+'" "'+$fixture+'"'
+        $fallback=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
+        if(-not $fallback.WaitForExit(15000) -or $fallback.ExitCode -ne 0) {
+          throw 'Leaf context launcher refused the synthetic fixture.'
+        }
+        for($i=0;$i -lt 24;$i++) {
+          Start-Sleep -Milliseconds 500
+          $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+          if($found.Length -gt 1) { throw 'Duplicate workspace after leaf command.' }
+          if($found.Length -eq 1) { $window=$found[0];break }
+        }
+      }
+    }
+    if($window -eq [IntPtr]::Zero) {
+      foreach($item in [FoobarHostWindow]::Describe([uint32]$proc.Id)) {
+        Write-Host "HOST_WINDOW_DIAGNOSTIC=$item"
+      }
+      throw 'Real foobar context command did not open Studio (full path and leaf tested).'
+    }
     if(-not [FoobarHostWindow]::Responsive($window)) { throw 'Studio window unresponsive.' }
     foreach($id in $controls) {
       if([FoobarHostWindow]::GetDlgItem($window,$id) -eq [IntPtr]::Zero) {

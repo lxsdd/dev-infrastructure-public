@@ -35,6 +35,9 @@ jobs:
             (Join-Path (Get-Location) '.github/actions/foobar-host-smoke/host-smoke.ps1'),
             [ref]$tokens, [ref]$errors)
           if ($errors.Count) { throw ($errors | Out-String) }
+      - name: Test synthetic WAVE fixture guards before installing hosts
+        shell: pwsh
+        run: ./.github/actions/foobar-host-smoke/tests/fixture-tests.ps1
       - name: Start verified official foobar2000 host ${{ matrix.architecture }}
         uses: ./.github/actions/foobar-host-smoke
         with:

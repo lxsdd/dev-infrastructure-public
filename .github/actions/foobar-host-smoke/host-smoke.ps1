@@ -7,6 +7,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'synthetic-wave.ps1')
 
 # Immutable official-installer pins from microsoft/winget-pkgs:
 # manifests/p/PeterPawlowski/foobar2000/2.26.1/...installer.yaml
@@ -84,6 +85,25 @@ try {
   }
   if (-not $expected -and $proc.HasExited) { throw "foobar2000 $Architecture did not stay running." }
   if ($expected -and -not $loaded) { throw "COMPONENT_LOAD_$Architecture=FAIL ($expected absent in process modules)" }
+  # Append only a new synthetic WAV in runner temp; do not start playback.
+  $fixture=Join-Path $dir 'synthetic-8k-silence.wav'
+  $fixtureBefore=New-FoobarSyntheticWave -Path $fixture
+  $dispatch=$null
+  try {
+    $dispatch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList @('/add','/immediate',$fixture) -PassThru
+    if (-not $dispatch.WaitForExit(15000)) { throw "foobar2000 $Architecture did not return from /add" }
+    if ($dispatch.ExitCode -ne 0) { throw "foobar2000 $Architecture /add exited $($dispatch.ExitCode)" }
+    Start-Sleep -Seconds 2
+    $proc.Refresh()
+    if ($proc.HasExited) { throw "foobar2000 $Architecture exited after /add" }
+    Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+    Write-Host "SYNTHETIC_WAV_CLI_NO_WRITE_$Architecture=PASS"
+  } finally {
+    if ($null -ne $dispatch) {
+      try { if (-not $dispatch.HasExited) { Stop-Process -Id $dispatch.Id -Force -ErrorAction Stop } }
+      catch { Write-Warning 'Could not stop disposable /add launcher.' }
+    }
+  }
   Write-Host "HOST_BOOT_$Architecture=PASS"
   if ($expected) { Write-Host "COMPONENT_LOAD_$Architecture=PASS" }
   else { Write-Host "COMPONENT_LOAD_$Architecture=NOT_TESTED" }

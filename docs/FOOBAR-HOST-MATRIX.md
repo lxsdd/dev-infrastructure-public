@@ -70,3 +70,27 @@ Initial candidates after baseline qualification:
 foo_discogger, music-metadata-studio, foo_metadata_isolation-public,
 foo_smart_tempo-public, and foo_dj_library_bridge. Each project retains its
 own copyright/licensing and exact-SHA acceptance gates.
+
+
+## Synthetic WAV no-write CLI smoke
+
+Each invocation generates a deterministic one-second 8 kHz mono 16-bit
+PCM WAVE under the ephemeral runner's temporary directory. The action passes
+that file to its already running, isolated foobar2000 host using the
+documented /add /immediate command. The launcher must return successfully
+and the host must remain running. The fixture's SHA-256, byte count and
+LastWriteTimeUtc ticks must remain unchanged. Both architectures have
+independent temporary fixtures and their own test verdicts.
+
+The additional gate is SYNTHETIC_WAV_CLI_NO_WRITE_Win32 or
+SYNTHETIC_WAV_CLI_NO_WRITE_x64. It verifies CLI request dispatch and lack of
+mutation of this synthetic file. It does NOT prove audio decoding or that
+the playlist displays this entry. It does NOT invoke/validate the components'
+CUE/tag/ReplayGain/artwork writer callbacks, so MEDIA_WRITE_SAFETY remains
+NOT_TESTED.
+
+The pure helper has dedicated negative tests: accidental overwrite,
+timestamp modification and same-size byte tampering must be detected.
+No real music collection, file association or personal foobar profile is used.
+Other component projects retain their previously pinned shared action SHA
+until the updated host action has passed BOTH actual Windows architectures.

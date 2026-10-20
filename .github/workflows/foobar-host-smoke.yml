@@ -38,6 +38,9 @@ jobs:
       - name: Test synthetic WAVE fixture guards before installing hosts
         shell: pwsh
         run: ./.github/actions/foobar-host-smoke/tests/fixture-tests.ps1
+      - name: Test immutable synthetic MP3 fixture generation and mutation guards
+        shell: pwsh
+        run: ./.github/actions/foobar-host-smoke/tests/mp3-fixture-tests.ps1
       - name: Test synthetic external CUE creation and mutation guards
         shell: pwsh
         run: ./.github/actions/foobar-host-smoke/tests/cue-fixture-tests.ps1

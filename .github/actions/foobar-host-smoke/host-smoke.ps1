@@ -95,36 +95,40 @@ public static class FoobarHostWindow {
   public static bool SwitchTab(IntPtr dialog,int tabId,int index) {
     var tab=GetDlgItem(dialog,tabId);
     if(tab==IntPtr.Zero) return false;
-    IntPtr result;
-    if(SendMessageTimeoutW(tab,0x130C,new IntPtr(index),IntPtr.Zero,
-                           2,5000,out result)==IntPtr.Zero ||
-       result.ToInt64()==-1) return false;
-    var ptr=Marshal.AllocHGlobal(3*IntPtr.Size+8);
-    try {
-      for(int i=0;i<3*IntPtr.Size+8;i+=4) Marshal.WriteInt32(ptr,i,0);
-      Marshal.WriteIntPtr(ptr,0,tab);
-      Marshal.WriteIntPtr(ptr,IntPtr.Size,new IntPtr(tabId));
-      Marshal.WriteInt32(ptr,IntPtr.Size*2,-551); // TCN_SELCHANGE
-      if(SendMessageTimeoutW(dialog,0x004E,new IntPtr(tabId),ptr,
-                             2,5000,out result)==IntPtr.Zero) return false;
-      if(SendMessageTimeoutW(tab,0x130B,IntPtr.Zero,IntPtr.Zero,
-                             2,5000,out result)==IntPtr.Zero) return false;
-      return result.ToInt64()==index;
-    } finally { Marshal.FreeHGlobal(ptr); }
+    // Never pass pointers to WM_NOTIFY across processes. Let the real tab
+    // control itself generate TCN_SELCHANGE using ordinary keyboard events.
+    IntPtr current;
+    if(SendMessageTimeoutW(tab,0x130B,IntPtr.Zero,IntPtr.Zero,2,5000,out current)==IntPtr.Zero)
+      return false;
+    int from=checked((int)current.ToInt64());
+    if(from<0 || index<0 || index>2) return false;
+    for(int n=0;n<3 && from!=index;++n) {
+      int key=from<index?0x27:0x25; // VK_RIGHT / VK_LEFT
+      IntPtr unused;
+      if(SendMessageTimeoutW(tab,0x0100,new IntPtr(key),IntPtr.Zero,2,5000,out unused)==IntPtr.Zero)
+        return false;
+      SendMessageTimeoutW(tab,0x0101,new IntPtr(key),IntPtr.Zero,2,5000,out unused);
+      if(SendMessageTimeoutW(tab,0x130B,IntPtr.Zero,IntPtr.Zero,2,5000,out current)==IntPtr.Zero)
+        return false;
+      int now=checked((int)current.ToInt64());
+      if(now==from) return false; // no invented tab selection
+      from=now;
+    }
+    return from==index;
   }
   public static bool SelectListRow(IntPtr dialog,int listId,int index) {
     var list=GetDlgItem(dialog,listId);
-    if(list==IntPtr.Zero || !IsWindowVisible(list)) return false;
-    var item=Marshal.AllocHGlobal(128);
-    try {
-      for(int i=0;i<128;i+=4) Marshal.WriteInt32(item,i,0);
-      Marshal.WriteInt32(item,12,2); // LVIS_SELECTED
-      Marshal.WriteInt32(item,16,2); // stateMask
-      IntPtr result;
-      return SendMessageTimeoutW(list,0x102B,new IntPtr(index),item,
-                                 2,5000,out result)!=IntPtr.Zero &&
-             result!=IntPtr.Zero;
-    } finally { Marshal.FreeHGlobal(item); }
+    if(list==IntPtr.Zero || !IsWindowVisible(list) || index!=0) return false;
+    // Pointer-bearing LVM_SETITEMSTATE cannot cross process boundaries.
+    // A genuine mouse click runs inside the target native ListView process.
+    IntPtr ignored;
+    IntPtr clientPoint=new IntPtr((42<<16)|28); // below header, row 0
+    if(SendMessageTimeoutW(list,0x0201,new IntPtr(1),clientPoint,2,5000,out ignored)==IntPtr.Zero)
+      return false;
+    SendMessageTimeoutW(list,0x0202,IntPtr.Zero,clientPoint,2,5000,out ignored);
+    IntPtr selected;
+    return SendMessageTimeoutW(list,0x1032,IntPtr.Zero,IntPtr.Zero,2,5000,out selected)!=IntPtr.Zero
+       && selected.ToInt64()==1;
   }
   public static bool Command(IntPtr dialog,int id) {
     IntPtr result;

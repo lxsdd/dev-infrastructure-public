@@ -16,6 +16,10 @@ inputs:
     required: false
     description: Exact native workspace title
     default: ""
+  probe-mode:
+    required: false
+    description: "reuse (default) or diagnostic-no-write"
+    default: "reuse"
   required-control-ids:
     required: false
     description: Comma-separated native control IDs
@@ -32,5 +36,6 @@ runs:
         FB2K_CONTEXT_COMMAND: ${{ inputs.context-command }}
         FB2K_EXPECTED_WINDOW_TITLE: ${{ inputs.expected-window-title }}
         FB2K_REQUIRED_CONTROLS: ${{ inputs.required-control-ids }}
+        FB2K_PROBE_MODE: ${{ inputs.probe-mode }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -ProbeMode $env:FB2K_PROBE_MODE

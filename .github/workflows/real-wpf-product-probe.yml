@@ -46,7 +46,7 @@ jobs:
             # never patch the repository global.json or its NuGet lockfile.
             $installer = Join-Path $env:RUNNER_TEMP 'dotnet-install-exact.ps1'
             $sdkDir = Join-Path $env:RUNNER_TEMP 'pinned-dotnet-sdk'
-            Invoke-WebRequest -UseBasicParsing -MaximumRedirection 5 -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer
+            Invoke-WebRequest -UseBasicParsing -MaximumRedirection 5 -Uri 'https://raw.githubusercontent.com/dotnet/install-scripts/e5cf1dd2d1540ed05ac84f8eb8c5cdec2807621e/src/dotnet-install.ps1' -OutFile $installer
             & $installer -Version $exactSdk -InstallDir $sdkDir -NoPath
             if (-not (Test-Path -LiteralPath (Join-Path $sdkDir 'dotnet.exe') -PathType Leaf)) { throw 'Exact temporary SDK installation did not produce dotnet.exe.' }
             $env:PATH = "$sdkDir;$env:PATH"

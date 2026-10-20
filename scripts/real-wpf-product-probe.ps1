@@ -251,6 +251,48 @@ try {
                 }
             }
         }
+        # Verify each dense workflow tab while the REAL window is compact.
+        # Selection only; none of the actions below is invoked.
+        foreach ($smallCase in @(
+            @{ Tab='Target Library'; Tag='TARGET'; IDs=@('TargetDatabaseTextBox','DiscoverTargetButton') },
+            @{ Tab='Path matching'; Tag='PATH'; IDs=@('AnalyzePathsButton','VerifyRootSampleButton','VerifyPhysicalIdsButton') },
+            @{ Tab='Preview / Changes'; Tag='PREVIEW'; IDs=@('BuildPreviewButton','BuildVerifiedPreviewButton') }
+        )) {
+            $tabQ = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::NameProperty, $smallCase.Tab)
+            $tabItems = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabQ) |
+                Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem' })
+            if ($tabItems.Count -ne 1) { throw ('Compact tab missing: ' + $smallCase.Tag) }
+            $tabPattern = [System.Windows.Automation.SelectionItemPattern]$tabItems[0].GetCurrentPattern(
+                [System.Windows.Automation.SelectionItemPattern]::Pattern)
+            $tabPattern.Select()
+            Start-Sleep -Milliseconds 160
+            $check = Test-WindowsUiAccessibility -WindowHandle $handle -RequiredAutomationIds ([string[]]$smallCase.IDs)
+            if (-not $check.Passed) {
+                throw ('Compact ' + $smallCase.Tag + ' controls unreachable at ' +
+                    $shape.Tag + ': ' + ($check.Issues -join ','))
+            }
+            $smallRects = @()
+            foreach ($id in $smallCase.IDs) {
+                $idQ = [System.Windows.Automation.PropertyCondition]::new(
+                    [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
+                $ctl = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $idQ)
+                if ($null -eq $ctl) { throw ('Compact UIA item missing: ' + $smallCase.Tag) }
+                $smallRects += $ctl.Current.BoundingRectangle
+            }
+            for ($i = 0; $i -lt $smallRects.Count; $i++) {
+                for ($k = $i + 1; $k -lt $smallRects.Count; $k++) {
+                    $intersect = [System.Windows.Rect]::Intersect($smallRects[$i], $smallRects[$k])
+                    if (-not $intersect.IsEmpty -and
+                        $intersect.Width -gt 2 -and $intersect.Height -gt 2) {
+                        throw ('Compact ' + $smallCase.Tag + ' actions overlap at ' + $shape.Tag)
+                    }
+                }
+            }
+            Write-Host ('PRODUCTION_WPF_COMPACT_' + $smallCase.Tag + '_' + $shape.Tag + '=PASS')
+        }
+        $sourceTabPattern.Select()
+        Start-Sleep -Milliseconds 120
         Write-Host ('PRODUCTION_WPF_COMPACT_RESIZE_' + $shape.Tag + '=PASS')
     }
     $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea

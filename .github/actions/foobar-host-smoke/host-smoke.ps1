@@ -6,6 +6,7 @@ param(
   [string]$ContextCommand = '',
   [string]$ExpectedWindowTitle = '',
   [string]$RequiredControlIds = '',
+  [ValidateSet('wav','external-cue')][string]$ContextFixture = 'wav',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -183,6 +184,9 @@ try {
   else { Write-Host "COMPONENT_LOAD_$Architecture=NOT_TESTED" }
 
   if ($ContextCommand) {
+    # Only the generated WAV or the generated two-track external CUE can be used.
+    # This value never accepts caller-supplied filesystem paths.
+    $contextSource=if($ContextFixture -eq 'external-cue'){$cue}else{$fixture}
     $controls=@()
     if ($RequiredControlIds) {
       foreach($item in $RequiredControlIds.Split(',')) {
@@ -194,7 +198,7 @@ try {
       }
     }
     # /context_command addresses this specific disposable file, never the user's library.
-    $arg='/context_command:"'+$ContextCommand+'" "'+$fixture+'"'
+    $arg='/context_command:"'+$ContextCommand+'" "'+$contextSource+'"'
     $forward=$null
     try {
       $forward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
@@ -220,7 +224,7 @@ try {
       $leaf=($ContextCommand -split '/')[-1]
       if($leaf -ne $ContextCommand) {
         Write-Host 'HOST_CONTEXT_ROUTE=RETRY_LEAF_NAME'
-        $arg='/context_command:"'+$leaf+'" "'+$fixture+'"'
+        $arg='/context_command:"'+$leaf+'" "'+$contextSource+'"'
         $fallback=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
         if(-not $fallback.WaitForExit(15000) -or $fallback.ExitCode -ne 0) {
           throw 'Leaf context launcher refused the synthetic fixture.'
@@ -237,7 +241,7 @@ try {
       foreach($item in [FoobarHostWindow]::Describe([uint32]$proc.Id)) {
         Write-Host "HOST_WINDOW_DIAGNOSTIC=$item"
       }
-      throw 'Real foobar context command did not open Studio (full path and leaf tested).'
+      throw 'Real foobar context command did not open the expected native window (full path and leaf tested).'
     }
     if(-not [FoobarHostWindow]::Responsive($window)) { throw 'Studio window unresponsive.' }
     foreach($id in $controls) {
@@ -259,7 +263,10 @@ try {
     }
     Write-Host "HOST_WORKSPACE_REUSE_$Architecture=PASS"
     Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+    Assert-FoobarFixtureUnchanged -Path $cue -Before $cueBefore
     Write-Host "HOST_WORKSPACE_SYNTHETIC_WAV_UNCHANGED_$Architecture=PASS"
+    Write-Host "HOST_WORKSPACE_SYNTHETIC_CUE_UNCHANGED_$Architecture=PASS"
+    Write-Host "HOST_WORKSPACE_CONTEXT_FIXTURE_$Architecture=$ContextFixture"
     Write-Host "MEDIA_WRITE_SAFETY_$Architecture=NOT_TESTED"
     Write-Host "FOOBAR_UI_$Architecture=PARTIAL (open, controls, reuse only)"
   } else {

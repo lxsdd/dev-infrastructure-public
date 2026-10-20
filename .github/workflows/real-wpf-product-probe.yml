@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: lxsdd/rekordbox-mytag-sync
-          ref: 04dbf0d284b752a49d490cc64a49a674325168a8
+          ref: 81e8aa8fb6d8aa2f97a9e1383db7b1b71dd9ce53
           path: product
           persist-credentials: false
       - name: Verify preinstalled .NET 10 Windows SDK on hosted runner

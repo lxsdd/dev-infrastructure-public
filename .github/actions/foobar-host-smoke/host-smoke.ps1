@@ -11,6 +11,7 @@ param(
   [int]$ClipboardListId = 0,
   [bool]$BeatportEditionProbe = $false,
   [bool]$ExternalCueProbe = $false,
+  [bool]$EmbeddedCueProbe = $false,
   [bool]$StalePhysicalProbe = $false,
   [bool]$AuthorizedDiscogsProbe = $false,
   [string]$DiscogsReleaseId = '38012673',
@@ -553,6 +554,105 @@ FILE "synthetic-8k-silence.wav" WAVE
       if($window -eq [IntPtr]::Zero) { throw 'Could not reopen WAV workspace.' }
       if(-not [FoobarHostWindow]::Enabled($window,$ClipboardButtonId)) {
         throw 'Original WAV workspace import control was not re-enabled.'
+      }
+    }
+    if($EmbeddedCueProbe) {
+      if(-not $ExternalCueProbe -or -not $OfflineClipboardTest -or
+         $ClipboardButtonId -le 0 -or $ClipboardListId -le 0) {
+        throw 'Embedded CUE host probe requires qualified external CUE and offline comparison.'
+      }
+      # Locally synthesized valid FLAC with 1-second silent constant frame
+      # and an embedded multiline CUESHEET Vorbis comment (two tracks).
+      # Python stdlib is available on windows-2022; no media encoder,
+      # online download, or tag/FLAC writer is used.
+      $flac=Join-Path $dir 'synthetic-embedded.flac'
+      & python (Join-Path $PSScriptRoot 'synthetic-embedded-flac.py') $flac
+      if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $flac)) {
+        throw 'Deterministic embedded CUE FLAC fixture was not generated.'
+      }
+      $flacBefore=Get-FoobarFixtureSnapshot -Path $flac
+      if(-not [FoobarHostWindow]::Close($window)) {
+        throw 'Could not close existing WAV workspace for embedded FLAC.'
+      }
+      for($i=0;$i -lt 20;$i++) {
+        Start-Sleep -Milliseconds 200
+        if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -eq 0) {break}
+      }
+      if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -ne 0) {
+        throw 'Previous workspace not closed before FLAC context selection.'
+      }
+      $flacDispatch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList @('/add','/immediate',$flac) -PassThru
+      if(-not $flacDispatch.WaitForExit(15000) -or $flacDispatch.ExitCode -ne 0) {
+        throw 'Native foobar did not import the deterministic FLAC.'
+      }
+      $leaf=($ContextCommand -split '/')[-1]
+      $flacArg='/context_command:"'+$leaf+'" "'+$flac+'"'
+      $launch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $flacArg -PassThru
+      if(-not $launch.WaitForExit(15000) -or $launch.ExitCode -ne 0) {
+        throw 'Native embedded FLAC context command failed.'
+      }
+      $flacWindow=[IntPtr]::Zero
+      for($i=0;$i -lt 35;$i++) {
+        Start-Sleep -Milliseconds 400
+        $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+        if($found.Length -gt 1) {throw 'Duplicate native FLAC workspace.'}
+        if($found.Length -eq 1) {$flacWindow=$found[0];break}
+      }
+      if($flacWindow -eq [IntPtr]::Zero) {throw 'Embedded FLAC did not open native Studio.'}
+      if(-not [FoobarHostWindow]::Enabled($flacWindow,290)) {
+        throw 'Physical FLAC does not expose embedded CUE Inspect action.'
+      }
+      if(-not [FoobarHostWindow]::Click($flacWindow,290)) {
+        throw 'Native Inspect CUE refused embedded physical FLAC.'
+      }
+      $flacFields=[FoobarHostWindow]::ListCount($flacWindow,$ClipboardListId)
+      if($flacFields -lt 8) {
+        throw "Native embedded CUE inventory is missing ($flacFields rows)."
+      }
+      Write-Host "HOST_EMBEDDED_FLAC_CUE_INSPECT_$Architecture=PASS (physical Vorbis-comment CUESHEET)"
+      # Run a full fabricated edition through this exact native CUE
+      # comparison path; its identity is unverified, never an auto write.
+      $flacEdition=@'
+@beatport-release-json
+{"id":987,"name":"Runner Embedded EP","track_count":2,"new_release_date":"2026-10-16"}
+@beatport-tracks-json
+{"count":2,"results":[{"id":321,"name":"Runner","mix_name":"Extended Mix","number":1,"artists":[{"name":"Example DJ"}],"length_ms":402500,"release":{"id":987,"name":"Runner Embedded EP"}},{"id":322,"name":"Runner","mix_name":"Radio Edit","number":2,"artists":[{"name":"Example DJ"}],"length_ms":202500,"release":{"id":987,"name":"Runner Embedded EP"}}]}
+'@
+      try {
+        Set-Clipboard -Value $flacEdition -ErrorAction Stop
+        if(-not [FoobarHostWindow]::Enabled($flacWindow,$ClipboardButtonId) -or
+           -not [FoobarHostWindow]::Click($flacWindow,$ClipboardButtonId)) {
+          throw 'Native read-only embedded FLAC edition import refused.'
+        }
+        $summary=[FoobarHostWindow]::ListCount($flacWindow,$ClipboardListId)
+        $detail=[FoobarHostWindow]::ListCount($flacWindow,294)
+        $hint=[FoobarHostWindow]::Text($flacWindow,272)
+        if($summary -lt 4 -or $detail -lt 1 -or
+           $hint -notmatch '^Release details and tentative CUE assignment') {
+          throw "Embedded FLAC CUE edition native comparison failed ($summary/$detail; $hint)."
+        }
+        Assert-FoobarFixtureUnchanged -Path $flac -Before $flacBefore
+        Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+        Write-Host "HOST_EMBEDDED_FLAC_CUE_EDITION_COMPARE_$Architecture=PASS (read-only synthetic edition)"
+      } finally {
+        Set-Clipboard -Value '' -ErrorAction SilentlyContinue
+      }
+      if(-not [FoobarHostWindow]::Close($flacWindow)) {
+        throw 'Native embedded FLAC workspace did not close.'
+      }
+      $arg='/context_command:"'+$leaf+'" "'+$fixture+'"'
+      $restore=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
+      if(-not $restore.WaitForExit(15000) -or $restore.ExitCode -ne 0) {
+        throw 'Could not restore original WAV for final stale source test.'
+      }
+      $window=[IntPtr]::Zero
+      for($i=0;$i -lt 32;$i++) {
+        Start-Sleep -Milliseconds 300
+        $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+        if($found.Length -eq 1) {$window=$found[0];break}
+      }
+      if($window -eq [IntPtr]::Zero) {
+        throw 'Original WAV workspace was not restored after embedded FLAC.'
       }
     }
     if($StalePhysicalProbe) {

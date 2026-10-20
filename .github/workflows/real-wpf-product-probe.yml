@@ -1,0 +1,48 @@
+name: Pinned real WPF product window UIA probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/real-wpf-product-probe.ps1
+      - scripts/windows-ui-accessibility.ps1
+      - .github/workflows/real-wpf-product-probe.yml
+permissions:
+  contents: read
+concurrency:
+  group: real-wpf-visual-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pinned-real-window:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout exact qualified public product source (no secrets or user files)
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/rekordbox-mytag-sync
+          ref: 04dbf0d284b752a49d490cc64a49a674325168a8
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Restore pinned product lockfile and build WPF
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = 'product/src/RekordboxMyTagSync/RekordboxMyTagSync.csproj'
+          dotnet restore $p -r win-x64 --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source locked restore failed.' }
+          dotnet build $p -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source WPF build failed.' }
+      - name: Observe real WPF window, accessibility and keyboard focus
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'product/src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/rekordbox MyTagSync.exe'
+          & ./scripts/real-wpf-product-probe.ps1 -ProductExe $exe
+          if (-not $?) { throw 'Real WPF window probe failed.' }

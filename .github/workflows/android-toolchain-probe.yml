@@ -140,7 +140,7 @@ jobs:
           echo 'PUBLIC_JAR_ABSTRACT_PROCESSOR_ABI:'
           cat abstract-processor-abi.txt
           failed=0
-          for pair in 'requestCounter|channel-abi.txt' 'requests|channel-abi.txt' 'startSession(java.lang.String)|channel-abi.txt' 'write(java.lang.String, java.lang.String, java.lang.String)|channel-abi.txt' 'get();|abstract-processor-abi.txt' 'Channel$1|processor-abi.txt' 'extends su.litvak.chromecast.api.v2.Channel$AbstractResultProcessor|processor-abi.txt'; do
+          for pair in 'requestCounter|channel-abi.txt' 'requests|channel-abi.txt' 'startSession(java.lang.String)|channel-abi.txt' 'write(java.lang.String, java.lang.String, java.lang.String)|channel-abi.txt' ' get() throws |abstract-processor-abi.txt' 'Channel$1|processor-abi.txt' 'extends su.litvak.chromecast.api.v2.Channel$AbstractResultProcessor|processor-abi.txt'; do
             symbol="${pair%%|*}"
             filename="${pair##*|}"
             if grep -Fq "$symbol" "$filename"; then

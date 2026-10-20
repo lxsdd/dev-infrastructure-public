@@ -128,14 +128,28 @@ jobs:
           test -n "$JAR" && test -s "$JAR"
           sha256sum "$JAR"
           jar tf "$JAR" > jar-entries.txt
-          grep -Fq 'su/litvak/chromecast/api/v2/Channel$ResultProcessor.class' jar-entries.txt
+          echo 'PUBLIC_JAR_CHANNEL_CLASSES:'
+          grep -F 'su/litvak/chromecast/api/v2/Channel' jar-entries.txt || true
           javap -private -classpath "$JAR" 'su.litvak.chromecast.api.v2.Channel' > channel-abi.txt
           javap -private -classpath "$JAR" 'su.litvak.chromecast.api.v2.Channel$ResultProcessor' > processor-abi.txt
-          grep -Fq 'requestCounter' channel-abi.txt
-          grep -Fq 'requests' channel-abi.txt
-          grep -Fq 'startSession(java.lang.String)' channel-abi.txt
-          grep -Fq 'write(java.lang.String, java.lang.String, java.lang.String)' channel-abi.txt
-          grep -Fq 'get();' processor-abi.txt
-          grep -Fq 'Channel$1' processor-abi.txt
+          echo 'PUBLIC_JAR_CHANNEL_ABI:'
+          grep -E 'requestCounter|requests|startSession|write\\(' channel-abi.txt || true
+          echo 'PUBLIC_JAR_PROCESSOR_ABI:'
+          cat processor-abi.txt
+          failed=0
+          for pair in 'requestCounter|channel-abi.txt' 'requests|channel-abi.txt' 'startSession(java.lang.String)|channel-abi.txt' 'write(java.lang.String, java.lang.String, java.lang.String)|channel-abi.txt' 'get();|processor-abi.txt' 'Channel$1|processor-abi.txt'; do
+            symbol="${pair%%|*}"
+            filename="${pair##*|}"
+            if grep -Fq "$symbol" "$filename"; then
+              echo "ABI_FOUND: $symbol"
+            else
+              echo "ABI_MISSING: $symbol"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo 'PUBLIC_CAST_JAR_ABI=FAIL'
+            exit 1
+          fi
           echo 'PUBLIC_CAST_JAR_ABI=PASS'
           echo 'NO_PRIVATE_REPOSITORIES_CHECKED_OUT=PASS'

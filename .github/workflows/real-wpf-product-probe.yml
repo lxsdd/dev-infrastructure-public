@@ -36,11 +36,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $p = 'product/src/RekordboxMyTagSync/RekordboxMyTagSync.csproj'
-          dotnet restore $p -r win-x64 --locked-mode
-          if ($LASTEXITCODE -ne 0) { throw 'Pinned source locked restore failed.' }
-          dotnet build $p -c Release --no-restore
-          if ($LASTEXITCODE -ne 0) { throw 'Pinned source WPF build failed.' }
+          # dotnet selects global.json from the CURRENT DIRECTORY, not the project path.
+          # Honor the product's immutable 10.0.401 SDK and locked NuGet graph.
+          Push-Location 'product'
+          try {
+            $sdk = dotnet --version
+            Write-Host "PINNED_PRODUCT_DOTNET_SDK=$sdk"
+            if ($sdk -ne '10.0.401') { throw 'Pinned product global.json SDK 10.0.401 not honored.' }
+            $p = 'src/RekordboxMyTagSync/RekordboxMyTagSync.csproj'
+            dotnet restore $p -r win-x64 --locked-mode
+            if ($LASTEXITCODE -ne 0) { throw 'Pinned source locked restore failed.' }
+            dotnet build $p -c Release --no-restore
+            if ($LASTEXITCODE -ne 0) { throw 'Pinned source WPF build failed.' }
+          } finally { Pop-Location }
       - name: Observe real WPF window, accessibility and keyboard focus
         shell: powershell
         run: |

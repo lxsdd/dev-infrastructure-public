@@ -13,6 +13,7 @@ param(
   [bool]$ExternalCueProbe = $false,
   [bool]$EmbeddedCueProbe = $false,
   [bool]$MultiFileCueProbe = $false,
+  [bool]$RawTargetProbe = $false,
   [bool]$StalePhysicalProbe = $false,
   [bool]$AuthorizedDiscogsProbe = $false,
   [string]$DiscogsReleaseId = '38012673',
@@ -90,6 +91,45 @@ public static class FoobarHostWindow {
     if(SendMessageTimeoutW(list,0x1004,IntPtr.Zero,IntPtr.Zero,2,5000,out count)==IntPtr.Zero)
       throw new InvalidOperationException("Native candidate ListView did not respond.");
     return checked((int)count.ToInt64());
+  }
+  public static bool SwitchTab(IntPtr dialog,int tabId,int index) {
+    var tab=GetDlgItem(dialog,tabId);
+    if(tab==IntPtr.Zero) return false;
+    IntPtr result;
+    if(SendMessageTimeoutW(tab,0x130C,new IntPtr(index),IntPtr.Zero,
+                           2,5000,out result)==IntPtr.Zero ||
+       result.ToInt64()==-1) return false;
+    var ptr=Marshal.AllocHGlobal(3*IntPtr.Size+8);
+    try {
+      for(int i=0;i<3*IntPtr.Size+8;i+=4) Marshal.WriteInt32(ptr,i,0);
+      Marshal.WriteIntPtr(ptr,0,tab);
+      Marshal.WriteIntPtr(ptr,IntPtr.Size,new IntPtr(tabId));
+      Marshal.WriteInt32(ptr,IntPtr.Size*2,-551); // TCN_SELCHANGE
+      if(SendMessageTimeoutW(dialog,0x004E,new IntPtr(tabId),ptr,
+                             2,5000,out result)==IntPtr.Zero) return false;
+      if(SendMessageTimeoutW(tab,0x130B,IntPtr.Zero,IntPtr.Zero,
+                             2,5000,out result)==IntPtr.Zero) return false;
+      return result.ToInt64()==index;
+    } finally { Marshal.FreeHGlobal(ptr); }
+  }
+  public static bool SelectListRow(IntPtr dialog,int listId,int index) {
+    var list=GetDlgItem(dialog,listId);
+    if(list==IntPtr.Zero || !IsWindowVisible(list)) return false;
+    var item=Marshal.AllocHGlobal(128);
+    try {
+      for(int i=0;i<128;i+=4) Marshal.WriteInt32(item,i,0);
+      Marshal.WriteInt32(item,12,2); // LVIS_SELECTED
+      Marshal.WriteInt32(item,16,2); // stateMask
+      IntPtr result;
+      return SendMessageTimeoutW(list,0x102B,new IntPtr(index),item,
+                                 2,5000,out result)!=IntPtr.Zero &&
+             result!=IntPtr.Zero;
+    } finally { Marshal.FreeHGlobal(item); }
+  }
+  public static bool Command(IntPtr dialog,int id) {
+    IntPtr result;
+    return SendMessageTimeoutW(dialog,0x0111,new IntPtr(id),IntPtr.Zero,
+                               2,8000,out result)!=IntPtr.Zero;
   }
   public static bool Enabled(IntPtr dialog,int id) {
     var control=GetDlgItem(dialog,id);
@@ -301,6 +341,34 @@ try {
     }
     Write-Host "HOST_WORKSPACE_OPEN_$Architecture=PASS"
     Write-Host "HOST_WORKSPACE_CONTROLS_$Architecture=PASS"
+    if($RawTargetProbe) {
+      # Exercise the real native 3. Plan file locations tab, not merely the
+      # pure planner or an open-window smoke. The only input is this runner's
+      # disposable 8-kHz WAV; there is no actual move or write-capable path.
+      if(-not [FoobarHostWindow]::SwitchTab($window,270,2) -or
+         [FoobarHostWindow]::ListCount($window,261) -lt 1) {
+        throw 'Real native File locations tab did not open or list a WAV.'
+      }
+      if(-not [FoobarHostWindow]::SetText($window,264,$dir) -or
+         -not [FoobarHostWindow]::SetText($window,265,'%filename%') -or
+         -not [FoobarHostWindow]::Click($window,267)) {
+        throw 'Cannot generate read-only native raw location preview.'
+      }
+      if(-not [FoobarHostWindow]::SelectListRow($window,261,0) -or
+         -not [FoobarHostWindow]::Command($window,41300)) {
+        throw 'Actual native inspect raw destinations command failed.'
+      }
+      $hint=[FoobarHostWindow]::Text($window,272)
+      if($hint -notmatch '^Raw target inspection: 1 candidate\(s\);' -or
+         $hint -notmatch 'Final foobar destinations/CUE dependencies UNVERIFIED; no writes') {
+        throw "Native raw candidate observation summary missing: $hint"
+      }
+      Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+      Write-Host "HOST_RAW_DESTINATION_INSPECT_$Architecture=PASS (real File locations tab; read-only source/target probes)"
+      if(-not [FoobarHostWindow]::SwitchTab($window,270,0)) {
+        throw 'Cannot restore online metadata tab after native File locations check.'
+      }
+    }
     if($OfflineClipboardTest) {
       # No provider call. Synthetic user-declared metadata only.
       if($OfflineClipboardTest.Length -gt 2048 -or

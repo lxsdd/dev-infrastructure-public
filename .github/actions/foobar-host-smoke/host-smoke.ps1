@@ -103,9 +103,10 @@ try {
     & $profileCheck -ProfileDirectory (Join-Path $target 'profile') -Architecture $Architecture
     Write-Host "HOST_PROFILE_CHECK_$Architecture=PASS"
     if ($RestartProfileCheck -eq 'true') {
-      # Simulate abrupt host termination only inside the disposable installation.
-      Stop-Process -Id $proc.Id -Force -ErrorAction Stop
-      if (-not $proc.WaitForExit(10000)) { throw 'Disposable foobar did not stop for restart qualification.' }
+      # Qualify a supported clean restart; force-kill can trigger foobar recovery/safe mode.
+      if (-not $proc.CloseMainWindow()) { throw 'Disposable foobar has no graceful main-window close path.' }
+      if (-not $proc.WaitForExit(15000)) { throw 'Disposable foobar did not shut down gracefully.' }
+      Write-Host "HOST_GRACEFUL_STOP_$Architecture=PASS"
       $proc = Start-Process -FilePath $exe -WorkingDirectory $target -PassThru
       $restartDeadline=[DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
       $reloaded=$false
@@ -122,7 +123,12 @@ try {
         } catch [System.ComponentModel.Win32Exception] { }
         if ($reloaded) { break }
       }
-      if (-not $reloaded) { throw "COMPONENT_RESTART_LOAD_$Architecture=FAIL" }
+      if (-not $reloaded) {
+        $modules=@((Get-Process -Id $proc.Id -ErrorAction Stop).Modules)
+        Write-Host "HOST_RESTART_LOADED_MODULES_$Architecture=$((@($modules | Select-Object -ExpandProperty ModuleName) -join ','))"
+        Write-Host "HOST_RESTART_PROFILE_EXISTS_$Architecture=$(Test-Path -LiteralPath (Join-Path $target 'profile'))"
+        throw "COMPONENT_RESTART_LOAD_$Architecture=FAIL"
+      }
       & $profileCheck -ProfileDirectory (Join-Path $target 'profile') -Architecture $Architecture -ProbeIteration 2
       Write-Host "COMPONENT_RESTART_LOAD_$Architecture=PASS"
       Write-Host "HOST_PROFILE_RESTART_$Architecture=PASS"

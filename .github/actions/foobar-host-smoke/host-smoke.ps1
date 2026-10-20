@@ -12,6 +12,7 @@ param(
   [bool]$BeatportEditionProbe = $false,
   [bool]$ExternalCueProbe = $false,
   [bool]$EmbeddedCueProbe = $false,
+  [bool]$MultiFileCueProbe = $false,
   [bool]$StalePhysicalProbe = $false,
   [bool]$AuthorizedDiscogsProbe = $false,
   [string]$DiscogsReleaseId = '38012673',
@@ -554,6 +555,123 @@ FILE "synthetic-8k-silence.wav" WAVE
       if($window -eq [IntPtr]::Zero) { throw 'Could not reopen WAV workspace.' }
       if(-not [FoobarHostWindow]::Enabled($window,$ClipboardButtonId)) {
         throw 'Original WAV workspace import control was not re-enabled.'
+      }
+    }
+    if($MultiFileCueProbe) {
+      if(-not $ExternalCueProbe -or -not $BeatportEditionProbe -or
+         $ClipboardButtonId -le 0 -or $ClipboardListId -le 0) {
+        throw 'Multi-FILE host test requires the qualified external CUE comparison path.'
+      }
+      # Two separate disposable audio sources (both valid synthetic silent
+      # WAVs). TRACK 01 is deliberately repeated across FILE references:
+      # this is not proof of a unique remote release track position.
+      $second=Join-Path $dir 'synthetic-second.wav'
+      if(Test-Path -LiteralPath $second) {
+        throw 'Refusing to replace a previously existing WAV fixture.'
+      }
+      Copy-Item -LiteralPath $fixture -Destination $second -ErrorAction Stop
+      $secondBefore=Get-FoobarFixtureSnapshot -Path $second
+      $multiPath=Join-Path $dir 'synthetic-multifile.cue'
+      if(Test-Path -LiteralPath $multiPath) {
+        throw 'Refusing to replace a previously existing Multi-FILE CUE fixture.'
+      }
+      $multiCue=@'
+TITLE "Runner Multi-FILE EP"
+PERFORMER "Example DJ"
+REM GENRE "House"
+REM GENRE "Progressive Trance"
+REM CUSTOM "Keep unknown metadata"
+FILE "synthetic-8k-silence.wav" WAVE
+  TRACK 01 AUDIO
+    TITLE "Runner (Extended Mix)"
+    INDEX 01 00:00:00
+FILE "synthetic-second.wav" WAVE
+  TRACK 01 AUDIO
+    TITLE "Runner (Radio Edit)"
+    INDEX 01 00:00:00
+'@
+      [IO.File]::WriteAllText($multiPath,$multiCue,([Text.UTF8Encoding]::new($false)))
+      $multiBefore=Get-FoobarFixtureSnapshot -Path $multiPath
+      if(-not [FoobarHostWindow]::Close($window)) {
+        throw 'Could not close audio-only workspace before Multi-FILE test.'
+      }
+      for($i=0;$i -lt 20;$i++) {
+        Start-Sleep -Milliseconds 200
+        if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -eq 0) {break}
+      }
+      if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -ne 0) {
+        throw 'Audio-only workspace did not close before Multi-FILE selection.'
+      }
+      $load=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList @('/add','/immediate',$multiPath) -PassThru
+      if(-not $load.WaitForExit(15000) -or $load.ExitCode -ne 0) {
+        throw 'Real foobar failed to load synthetic two-source CUE.'
+      }
+      $leaf=($ContextCommand -split '/')[-1]
+      $cueArg='/context_command:"'+$leaf+'" "'+$multiPath+'"'
+      $cmd=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $cueArg -PassThru
+      if(-not $cmd.WaitForExit(15000) -or $cmd.ExitCode -ne 0) {
+        throw 'Multi-FILE native Prepare Tracks route was not accepted.'
+      }
+      $multiWindow=[IntPtr]::Zero
+      for($i=0;$i -lt 36;$i++) {
+        Start-Sleep -Milliseconds 400
+        $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+        if($found.Length -gt 1) {throw 'Duplicate modeless Multi-FILE workspace.'}
+        if($found.Length -eq 1) {$multiWindow=$found[0];break}
+      }
+      if($multiWindow -eq [IntPtr]::Zero) {
+        throw 'Native Studio window did not open on two-file CUE.'
+      }
+      if(-not [FoobarHostWindow]::Enabled($multiWindow,290) -or
+         -not [FoobarHostWindow]::Click($multiWindow,290)) {
+        throw 'Native Multi-FILE CUE Inspect was unavailable.'
+      }
+      $originals=[FoobarHostWindow]::ListCount($multiWindow,$ClipboardListId)
+      if($originals -lt 7) {
+        throw "Multi-FILE CUE original source inventory incomplete ($originals)."
+      }
+      Write-Host "HOST_MULTIFILE_CUE_INSPECT_$Architecture=PASS (2 independent FILEs, 2 repeated CUE track numbers)"
+      $edition=@'
+@beatport-release-json
+{"id":988,"name":"Runner Multi-FILE EP","track_count":2,"new_release_date":"2026-10-16"}
+@beatport-tracks-json
+{"count":2,"results":[{"id":331,"name":"Runner","mix_name":"Extended Mix","number":1,"artists":[{"name":"Example DJ"}],"length_ms":402500,"release":{"id":988,"name":"Runner Multi-FILE EP"}},{"id":332,"name":"Runner","mix_name":"Radio Edit","number":2,"artists":[{"name":"Example DJ"}],"length_ms":202500,"release":{"id":988,"name":"Runner Multi-FILE EP"}}]}
+'@
+      try {
+        Set-Clipboard -Value $edition -ErrorAction Stop
+        if(-not [FoobarHostWindow]::Enabled($multiWindow,$ClipboardButtonId) -or
+           -not [FoobarHostWindow]::Click($multiWindow,$ClipboardButtonId)) {
+          throw 'Native Multi-FILE edition import did not activate.'
+        }
+        $rows=[FoobarHostWindow]::ListCount($multiWindow,$ClipboardListId)
+        $details=[FoobarHostWindow]::ListCount($multiWindow,294)
+        $hint=[FoobarHostWindow]::Text($multiWindow,272)
+        if($rows -lt 4 -or $details -lt 1 -or
+           $hint -notmatch '^Release details and tentative CUE assignment') {
+          throw "Multi-FILE edition compare UI missing ($rows summary/$details details)."
+        }
+        Assert-FoobarFixtureUnchanged -Path $multiPath -Before $multiBefore
+        Assert-FoobarFixtureUnchanged -Path $second -Before $secondBefore
+        Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+        Write-Host "HOST_MULTIFILE_CUE_EDITION_COMPARE_$Architecture=PASS (read-only, 2 FILE refs)"
+      } finally {Set-Clipboard -Value '' -ErrorAction SilentlyContinue}
+      if(-not [FoobarHostWindow]::Close($multiWindow)) {
+        throw 'Native Multi-FILE CUE workspace did not close cleanly.'
+      }
+      $returnArg='/context_command:"'+$leaf+'" "'+$fixture+'"'
+      $restore=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $returnArg -PassThru
+      if(-not $restore.WaitForExit(15000) -or $restore.ExitCode -ne 0) {
+        throw 'Could not restore the single-WAV workspace after Multi-FILE test.'
+      }
+      $window=[IntPtr]::Zero
+      for($i=0;$i -lt 32;$i++) {
+        Start-Sleep -Milliseconds 300
+        $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+        if($found.Length -eq 1) {$window=$found[0];break}
+      }
+      if($window -eq [IntPtr]::Zero -or
+         -not [FoobarHostWindow]::Enabled($window,$ClipboardButtonId)) {
+        throw 'Audio-only workspace was not restored after Multi-FILE test.'
       }
     }
     if($EmbeddedCueProbe) {

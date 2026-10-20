@@ -107,34 +107,34 @@ public static class FoobarHostWindow {
       bool wow64;
       if(!IsWow64Process(process,out wow64)) throw new InvalidOperationException("Cannot determine list process architecture.");
       bool target64=Environment.Is64BitOperatingSystem && !wow64;
-      remote=VirtualAllocEx(process,IntPtr.Zero,(UIntPtr)256u,0x3000u,0x04u);
+      remote=VirtualAllocEx(process,IntPtr.Zero,(UIntPtr)1024u,0x3000u,0x04u);
       if(remote==IntPtr.Zero) throw new InvalidOperationException("Cannot allocate native display callback buffer.");
-      // NMHDR(hwndFrom,idFrom,code) + LVITEMW(mask,row,column,...).
-      // x86 NMHDR=12/LVITEM.pszText offset=20; x64 NMHDR=24/pszText offset=24.
-      int header=target64?24:12;
-      int pointer=header+(target64?24:20);
-      var request=new byte[128];
-      byte[] hwndFrom=target64
-        ?BitConverter.GetBytes(list.ToInt64())
-        :BitConverter.GetBytes(checked((uint)list.ToInt64()));
-      Buffer.BlockCopy(hwndFrom,0,request,0,hwndFrom.Length);
-      byte[] from=target64?BitConverter.GetBytes((ulong)id):BitConverter.GetBytes((uint)id);
-      Buffer.BlockCopy(from,0,request,target64?8:4,from.Length);
-      Buffer.BlockCopy(BitConverter.GetBytes(unchecked((uint)-177)),0,request,target64?16:8,4);
-      Buffer.BlockCopy(BitConverter.GetBytes((uint)1),0,request,header,4); // LVIF_TEXT
-      Buffer.BlockCopy(BitConverter.GetBytes(row),0,request,header+4,4);
-      Buffer.BlockCopy(BitConverter.GetBytes(column),0,request,header+8,4);
-      Buffer.BlockCopy(BitConverter.GetBytes(256),0,request,header+(target64?32:24),4);
+      // Ask the real virtual ListView for one item via LVM_GETITEMW.
+      // LVS_OWNERDATA does not support LVM_GETITEMTEXT, and Windows forbids
+      // sending WM_NOTIFY across process boundaries. The control must
+      // request LVN_GETDISPINFOW from its owner *inside* the foobar process.
+      // Both LVITEMW and the bounded WCHAR buffer reside in the target.
+      int pointer=target64?24:20; // LVITEMW.pszText
+      var request=new byte[64];
+      Buffer.BlockCopy(BitConverter.GetBytes(1u),0,request,0,4); // LVIF_TEXT
+      Buffer.BlockCopy(BitConverter.GetBytes(row),0,request,4,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(column),0,request,8,4);
+      long textBuffer=checked(remote.ToInt64()+512);
+      if(target64)
+        Buffer.BlockCopy(BitConverter.GetBytes(textBuffer),0,request,pointer,8);
+      else
+        Buffer.BlockCopy(BitConverter.GetBytes(checked((uint)textBuffer)),0,request,pointer,4);
+      Buffer.BlockCopy(BitConverter.GetBytes(256),0,request,target64?32:24,4);
       IntPtr length;
       if(!WriteProcessMemory(process,remote,request,new IntPtr(request.Length),out length) ||
          length.ToInt64()!=request.Length)
-        throw new InvalidOperationException("Cannot initialize native callback request.");
+        throw new InvalidOperationException("Cannot initialize native LVITEMW request.");
       IntPtr response;
-      // WM_NOTIFY with the real ListView HWND and its native control ID.
-      // This is a read-only display lookup, not a fake user click or writer.
-      if(SendMessageTimeoutW(dialog,0x004Eu,new IntPtr(id),remote,2,5000,out response)==IntPtr.Zero)
-        throw new InvalidOperationException("Native virtual-display callback timed out.");
-      var returned=new byte[128];
+      if(SendMessageTimeoutW(list,0x104Bu,IntPtr.Zero,remote,2,5000,out response)==IntPtr.Zero)
+        throw new InvalidOperationException("Native LVM_GETITEMW delivery failed or timed out.");
+      if(response==IntPtr.Zero)
+        throw new InvalidOperationException("Native owner-data LVM_GETITEMW rejected text request.");
+      var returned=new byte[64];
       if(!ReadProcessMemory(process,remote,returned,new IntPtr(returned.Length),out length)||
          length.ToInt64()!=returned.Length)
         throw new InvalidOperationException("Cannot read native display callback result.");

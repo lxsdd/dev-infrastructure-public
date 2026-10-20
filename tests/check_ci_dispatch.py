@@ -64,7 +64,7 @@ def run_case(*, private=False, runs=0, pr_foreign=False, changed=False,
             })
         if path == "branches/feature/synthetic":
             return FakeResponse({"commit": {"sha": "b" * 40 if changed else HEAD}})
-        if path.startswith("actions/workflows/build.yml/runs?"):
+        if path == "actions/workflows/build.yml/runs" and parsed.query.startswith("head_sha="):
             return FakeResponse({"total_count": runs})
         if path == "actions/workflows/build.yml/dispatches":
             assert req.get_method() == "POST"

@@ -10,8 +10,12 @@ inputs:
     default: ""
   context-command:
     required: false
-    description: Optional synthetic WAV native context command
+    description: Native context command dispatched only against disposable synthetic fixture
     default: ""
+  context-fixture-format:
+    required: false
+    description: "wav default or SHA-pinned synthetic mp3 for MP3-only Precision CUE context commands"
+    default: "wav"
   expected-window-title:
     required: false
     description: Exact native workspace title
@@ -74,6 +78,7 @@ runs:
         FB2K_ARCH: ${{ inputs.architecture }}
         FB2K_COMPONENT: ${{ inputs.component-dll }}
         FB2K_CONTEXT_COMMAND: ${{ inputs.context-command }}
+        FB2K_CONTEXT_FIXTURE_FORMAT: ${{ inputs.context-fixture-format }}
         FB2K_EXPECTED_WINDOW_TITLE: ${{ inputs.expected-window-title }}
         FB2K_REQUIRED_CONTROLS: ${{ inputs.required-control-ids }}
         FB2K_OFFLINE_CLIPBOARD_TEST: ${{ inputs.offline-clipboard-test }}
@@ -88,4 +93,4 @@ runs:
         FB2K_AUTHORIZED_DISCOGS_PROBE: ${{ inputs.authorized-discogs-probe }}
         FB2K_DISCOGS_RELEASE_ID: ${{ inputs.discogs-release-id }}
       run: |
-        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -OfflineClipboardTest $env:FB2K_OFFLINE_CLIPBOARD_TEST -ClipboardButtonId ([int]$env:FB2K_CLIPBOARD_BUTTON_ID) -ClipboardListId ([int]$env:FB2K_CLIPBOARD_LIST_ID) -BeatportEditionProbe ($env:FB2K_BEATPORT_EDITION_PROBE -eq 'true') -ExternalCueProbe ($env:FB2K_EXTERNAL_CUE_PROBE -eq 'true') -EmbeddedCueProbe ($env:FB2K_EMBEDDED_CUE_PROBE -eq 'true') -MultiFileCueProbe ($env:FB2K_MULTI_FILE_CUE_PROBE -eq 'true') -RawTargetProbe ($env:FB2K_RAW_TARGET_PROBE -eq 'true') -StalePhysicalProbe ($env:FB2K_STALE_PHYSICAL_PROBE -eq 'true') -AuthorizedDiscogsProbe ($env:FB2K_AUTHORIZED_DISCOGS_PROBE -eq 'true') -DiscogsReleaseId $env:FB2K_DISCOGS_RELEASE_ID
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ContextCommand $env:FB2K_CONTEXT_COMMAND -ContextFixtureFormat $env:FB2K_CONTEXT_FIXTURE_FORMAT -ExpectedWindowTitle $env:FB2K_EXPECTED_WINDOW_TITLE -RequiredControlIds $env:FB2K_REQUIRED_CONTROLS -OfflineClipboardTest $env:FB2K_OFFLINE_CLIPBOARD_TEST -ClipboardButtonId ([int]$env:FB2K_CLIPBOARD_BUTTON_ID) -ClipboardListId ([int]$env:FB2K_CLIPBOARD_LIST_ID) -BeatportEditionProbe ($env:FB2K_BEATPORT_EDITION_PROBE -eq 'true') -ExternalCueProbe ($env:FB2K_EXTERNAL_CUE_PROBE -eq 'true') -EmbeddedCueProbe ($env:FB2K_EMBEDDED_CUE_PROBE -eq 'true') -MultiFileCueProbe ($env:FB2K_MULTI_FILE_CUE_PROBE -eq 'true') -RawTargetProbe ($env:FB2K_RAW_TARGET_PROBE -eq 'true') -StalePhysicalProbe ($env:FB2K_STALE_PHYSICAL_PROBE -eq 'true') -AuthorizedDiscogsProbe ($env:FB2K_AUTHORIZED_DISCOGS_PROBE -eq 'true') -DiscogsReleaseId $env:FB2K_DISCOGS_RELEASE_ID

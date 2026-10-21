@@ -17,6 +17,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  installer-cache-contract:
+    # All test bytes are synthetic and local. Vendor reachability is NOT
+    # needed to prove integrity, cache hit, tamper and partial cleanup.
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse shared installer helper and native host scripts
+        shell: pwsh
+        run: |
+          foreach ($file in @(
+            '.github/actions/foobar-host-smoke/pinned-installer-cache.ps1',
+            '.github/actions/foobar-host-smoke/host-smoke.ps1',
+            '.github/actions/foobar-host-smoke/tests/installer-cache-tests.ps1'
+          )) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path (Get-Location) $file), [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { throw ("$file`n"+($errors | Out-String)) }
+          }
+      - name: Test pinned job-local installer cache without network or installer
+        shell: pwsh
+        run: ./.github/actions/foobar-host-smoke/tests/installer-cache-tests.ps1
+
   official-host-boot:
     runs-on: windows-2022
     timeout-minutes: 15

@@ -11,6 +11,7 @@ function Get-FoobarPinnedInstaller {
     [Parameter(Mandatory)][string]$Url,
     [Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$Sha256,
     [Parameter(Mandatory)][string]$CacheRoot,
+    [string]$MirrorUrl = '',
     [scriptblock]$DownloadAction = {
       param([string]$OfficialUrl,[string]$Destination)
       Invoke-WebRequest -Uri $OfficialUrl -OutFile $Destination -ErrorAction Stop
@@ -29,6 +30,16 @@ function Get-FoobarPinnedInstaller {
     throw 'Pinned foobar installer must use the matching official HTTPS URL and architecture.'
   }
   if ($Version -notmatch '^\d+\.\d+(\.\d+)?$') { throw 'Invalid pinned foobar version.' }
+  $downloadUrl=$Url
+  if (-not [string]::IsNullOrWhiteSpace($MirrorUrl)) {
+    # Only the exact versioned unmodified original asset in our GitHub release.
+    # Never change the independently pinned content-SHA256 acceptance test.
+    $expectedMirror='https://github.com/lxsdd/dev-infrastructure-public/releases/download/foobar-ci-upstream-v'+$Version+'/'+$expectedName
+    if ($MirrorUrl -cne $expectedMirror) {
+      throw 'Unpinned or foreign foobar GitHub Release mirror URL refused.'
+    }
+    $downloadUrl=$expectedMirror
+  }
   if (-not (Test-Path -LiteralPath $CacheRoot -PathType Container)) {
     throw 'Job-local runner cache root does not exist.'
   }
@@ -55,11 +66,14 @@ function Get-FoobarPinnedInstaller {
     # Download only when no verified job-local copy exists. Never publish it as
     # an Actions cache/artifact; no alternate host or unpinned binary is used.
     try {
-      & $DownloadAction $Url $partial
+      & $DownloadAction $downloadUrl $partial
     } catch {
       # Infrastructure unavailability must not be reported as a component
       # regression. Fail the required host gate, explicitly unqualified.
       $reason=$_.Exception.GetType().Name
+      if ($MirrorUrl) {
+        throw "HOST_DEPENDENCY_MIRROR_NOT_READY: foobar2000 $Version $Architecture GitHub release unavailable ($reason); HOST_BOOT, COMPONENT_LOAD, GUI and writer gates NOT_TESTED."
+      }
       throw "HOST_DEPENDENCY_TRANSPORT_BLOCKED: official foobar2000 $Version $Architecture unavailable ($reason); HOST_BOOT, COMPONENT_LOAD, GUI and writer gates NOT_TESTED."
     }
     Assert-PinnedInstaller $partial $sha

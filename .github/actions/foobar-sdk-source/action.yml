@@ -1,0 +1,15 @@
+name: Verified foobar2000 SDK source (owner Git tree)
+description: Provision immutable foobar2000 SDK 2026-10-01 source in disposable same-job RUNNER_TEMP with exact commit/tree/manifest/license checks, without a vendor download.
+inputs:
+  sdk-root:
+    description: Target path under runner.temp; must not already exist
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Verify and stage pinned SDK Git tree
+      shell: pwsh
+      env:
+        FOOBAR_SDK_OUTPUT: ${{ inputs.sdk-root }}
+      run: |
+        & (Join-Path $env:GITHUB_ACTION_PATH 'sdk-source.ps1') -SdkRoot $env:FOOBAR_SDK_OUTPUT

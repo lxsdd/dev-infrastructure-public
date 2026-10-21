@@ -28,7 +28,7 @@ jobs:
           foreach ($required in @('BeatportEditionProbe','OfflineClipboardTest','MultiFileCueProbe','RawTargetProbe','AuthorizedDiscogsProbe','RequiredControlIds','Get-FoobarPinnedInstaller','GITHUB_ORIGINAL_ASSET')) {
             if (-not $hostSource.Contains($required)) { throw "Advanced rich-host feature was lost: $required" }
           }
-          foreach ($required in @('beatport-edition-probe','offline-clipboard-test','multi-file-cue-probe','authorized-discogs-probe')) {
+          foreach ($required in @('beatport-edition-host-probe','offline-clipboard-test','multi-file-cue-host-probe','authorized-discogs-probe')) {
             if (-not $actionSource.Contains($required)) { throw "Rich action input was lost: $required" }
           }
           foreach ($file in @('.github/actions/foobar-host-smoke/host-smoke.ps1','.github/actions/foobar-host-smoke/pinned-installer-cache.ps1')) {

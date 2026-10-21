@@ -4,6 +4,7 @@ param(
   [Parameter(Mandatory)][ValidateSet('Win32','x64')][string]$Architecture,
   [string]$ComponentDll = '',
   [string]$ContextCommand = '',
+  [ValidateSet('wav','mp3')][string]$ContextFixtureFormat = 'wav',
   [string]$ExpectedWindowTitle = '',
   [string]$RequiredControlIds = '',
   [string]$OfflineClipboardTest = '',
@@ -22,6 +23,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'synthetic-wave.ps1')
+. (Join-Path $PSScriptRoot 'synthetic-mp3.ps1')
 . (Join-Path $PSScriptRoot 'pinned-installer-cache.ps1')
 
 # Immutable official-installer pins from microsoft/winget-pkgs:
@@ -288,6 +290,29 @@ try {
   else { Write-Host "COMPONENT_LOAD_$Architecture=NOT_TESTED" }
 
   if ($ContextCommand) {
+    # Precision CUE MP3-only: immutable synthetic, never the user's library.
+    $contextFixture=$fixture
+    $contextBefore=$fixtureBefore
+    if($ContextFixtureFormat -eq 'mp3') {
+      $contextFixture=Join-Path $dir 'synthetic-mono-silence.mp3'
+      $contextBefore=New-FoobarSyntheticMp3 -Path $contextFixture
+      $mp3Dispatch=$null
+      try {
+        $mp3Dispatch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList @('/add','/immediate',$contextFixture) -PassThru
+        if(-not $mp3Dispatch.WaitForExit(15000) -or $mp3Dispatch.ExitCode -ne 0) {
+          throw 'foobar did not import the disposable synthetic MP3.'
+        }
+        Start-Sleep -Seconds 2
+        $proc.Refresh()
+        if($proc.HasExited) { throw 'foobar exited after synthetic MP3 import.' }
+        Assert-FoobarFixtureUnchanged -Path $contextFixture -Before $contextBefore
+        Write-Host "SYNTHETIC_MP3_CLI_NO_WRITE_$Architecture=PASS"
+      } finally {
+        if($null -ne $mp3Dispatch -and -not $mp3Dispatch.HasExited) {
+          Stop-Process -Id $mp3Dispatch.Id -Force -ErrorAction SilentlyContinue
+        }
+      }
+    }
     $controls=@()
     if ($RequiredControlIds) {
       foreach($item in $RequiredControlIds.Split(',')) {
@@ -299,7 +324,7 @@ try {
       }
     }
     # /context_command addresses this specific disposable file, never the user's library.
-    $arg='/context_command:"'+$ContextCommand+'" "'+$fixture+'"'
+    $arg='/context_command:"'+$ContextCommand+'" "'+$contextFixture+'"'
     $forward=$null
     try {
       $forward=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
@@ -325,7 +350,7 @@ try {
       $leaf=($ContextCommand -split '/')[-1]
       if($leaf -ne $ContextCommand) {
         Write-Host 'HOST_CONTEXT_ROUTE=RETRY_LEAF_NAME'
-        $arg='/context_command:"'+$leaf+'" "'+$fixture+'"'
+        $arg='/context_command:"'+$leaf+'" "'+$contextFixture+'"'
         $fallback=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $arg -PassThru
         if(-not $fallback.WaitForExit(15000) -or $fallback.ExitCode -ne 0) {
           throw 'Leaf context launcher refused the synthetic fixture.'
@@ -350,6 +375,8 @@ try {
         throw "Studio missing control $id."
       }
     }
+    Assert-FoobarFixtureUnchanged -Path $contextFixture -Before $contextBefore
+    if($ContextFixtureFormat -eq 'mp3') { Write-Host "HOST_CONTEXT_SYNTHETIC_MP3_UNCHANGED_$Architecture=PASS" }
     Write-Host "HOST_WORKSPACE_OPEN_$Architecture=PASS"
     Write-Host "HOST_WORKSPACE_CONTROLS_$Architecture=PASS"
     if($RawTargetProbe) {

@@ -54,7 +54,14 @@ function Get-FoobarPinnedInstaller {
   try {
     # Download only when no verified job-local copy exists. Never publish it as
     # an Actions cache/artifact; no alternate host or unpinned binary is used.
-    & $DownloadAction $Url $partial
+    try {
+      & $DownloadAction $Url $partial
+    } catch {
+      # Infrastructure unavailability must not be reported as a component
+      # regression. Fail the required host gate, explicitly unqualified.
+      $reason=$_.Exception.GetType().Name
+      throw "HOST_DEPENDENCY_TRANSPORT_BLOCKED: official foobar2000 $Version $Architecture unavailable ($reason); HOST_BOOT, COMPONENT_LOAD, GUI and writer gates NOT_TESTED."
+    }
     Assert-PinnedInstaller $partial $sha
     if (Test-Path -LiteralPath $cached) {
       Assert-PinnedInstaller $cached $sha

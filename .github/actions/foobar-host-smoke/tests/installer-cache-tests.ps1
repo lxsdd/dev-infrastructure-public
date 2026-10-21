@@ -87,7 +87,12 @@ try {
   try {
     Get-FoobarPinnedInstaller -Architecture x64 -Version '2.26.1' -Url $x64Url `
       -Sha256 $sha -CacheRoot $interrupted -DownloadAction $abortDownload | Out-Null
-  } catch { $denied=$true }
+  } catch {
+    $denied=$true
+    if ($_.Exception.Message -notmatch 'HOST_DEPENDENCY_TRANSPORT_BLOCKED.*NOT_TESTED') {
+      throw 'Transport error did not classify the host gate as untested'
+    }
+  }
   if (-not $denied -or @(Get-ChildItem $interrupted -File -Recurse).Count -ne 0) {
     throw 'Partial network download poisoned future cache'
   }

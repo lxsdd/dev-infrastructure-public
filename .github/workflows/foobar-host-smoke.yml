@@ -22,7 +22,7 @@ jobs:
     # Uses the independently pinned owner Git source, never foobar2000.org.
     # Stages source only inside the ephemeral Windows CI machine.
     runs-on: windows-2022
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Verify PowerShell source syntax without network
@@ -37,6 +37,21 @@ jobs:
         uses: ./.github/actions/foobar-sdk-source
         with:
           sdk-root: ${{ runner.temp }}/foobar2000-sdk-2026-10-01
+      - uses: microsoft/setup-msbuild@v2
+      - name: Compile pinned official SDK core with MSVC Win32 and x64 without vendor download
+        shell: pwsh
+        run: |
+          $sdk=Join-Path $env:RUNNER_TEMP 'foobar2000-sdk-2026-10-01'
+          foreach ($platform in @('Win32','x64')) {
+            foreach ($project in @('pfc/pfc.vcxproj','foobar2000/SDK/foobar2000_SDK.vcxproj')) {
+              $projectPath=Join-Path $sdk $project
+              & msbuild.exe $projectPath /t:Build /p:Configuration=Release "/p:Platform=$platform" /p:PlatformToolset=v143 /m:2 /v:minimal /nologo
+              if ($LASTEXITCODE -ne 0) {
+                throw "Exact pinned SDK source MSVC compilation failed: $platform $project"
+              }
+            }
+            Write-Host "PINNED_SDK_SOURCE_MSVC_$platform=PASS"
+          }
       - name: Reject replacing preexisting pinned SDK tree
         shell: pwsh
         run: |

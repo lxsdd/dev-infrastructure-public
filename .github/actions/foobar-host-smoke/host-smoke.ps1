@@ -16,6 +16,7 @@ param(
   [bool]$RawTargetProbe = $false,
   [bool]$StalePhysicalProbe = $false,
   [bool]$AuthorizedDiscogsProbe = $false,
+  [bool]$AuthorizedDiscogsFullArtistProbe = $false,
   [string]$DiscogsReleaseId = '38012673',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
@@ -189,6 +190,11 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or [string]::IsNullOrWhiteSpace($env:RUNNER_
   throw 'Only a disposable GitHub Actions runner is supported.'
 }
 $discogsQaToken=$null
+if($AuthorizedDiscogsFullArtistProbe -and
+   (-not $AuthorizedDiscogsProbe -or $DiscogsReleaseId -ne '37332711' -or
+    -not $ContextCommand)) {
+  throw 'FULL_ARTIST_PREFLIGHT=FAIL (protected ID 37332711 and context action required)'
+}
 if($AuthorizedDiscogsProbe) {
   # Secrets are only allowed via environment-scoped, explicit manual QA.
   # Never inherit the secret into foobar.exe or put it on a command line.
@@ -462,6 +468,106 @@ try {
         Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
         Write-Host "HOST_AUTHORIZED_DISCOGS_EXACT_EDITION_$Architecture=PASS (official HTTPS, native read-only release and fields)"
         Write-Host "HOST_AUTHORIZED_DISCOGS_RELEASE_ID=$DiscogsReleaseId"
+        if($AuthorizedDiscogsFullArtistProbe) {
+          # End-to-end native GUI search through *unchanged* physical
+          # TITLE/ARTIST/VERSION fields on a synthetic 1-second FLAC. The
+          # fixture lives only in RUNNER_TEMP; no real library data or tags.
+          $tagged=Join-Path $dir 'synthetic-full-artist-discogs.flac'
+          & python (Join-Path $PSScriptRoot 'synthetic-discogs-flac.py') $tagged
+          if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $tagged)) {
+            throw 'SYNTHETIC_DISCOGS_FLAC=FAIL'
+          }
+          $taggedBefore=Get-FoobarFixtureSnapshot -Path $tagged
+          if(-not [FoobarHostWindow]::Close($window)) {
+            throw 'Native exact release window would not close for full-artist search.'
+          }
+          for($i=0;$i -lt 25;$i++) {
+            Start-Sleep -Milliseconds 200
+            if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -eq 0) {break}
+          }
+          if([FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle).Length -ne 0) {
+            throw 'Old Studio HWND survived before full-artist source selection.'
+          }
+          $import=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList @('/add','/immediate',$tagged) -PassThru
+          if(-not $import.WaitForExit(15000) -or $import.ExitCode -ne 0) {
+            throw 'Official foobar refused disposable FLAC import.'
+          }
+          $leaf=($ContextCommand -split '/')[-1]
+          $flacArg='/context_command:"'+$leaf+'" "'+$tagged+'"'
+          $launch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $flacArg -PassThru
+          if(-not $launch.WaitForExit(15000) -or $launch.ExitCode -ne 0) {
+            throw 'Native Studio context command refused synthetic tagged FLAC.'
+          }
+          $fullWindow=[IntPtr]::Zero
+          for($i=0;$i -lt 40;$i++) {
+            Start-Sleep -Milliseconds 300
+            $found=[FoobarHostWindow]::Find([uint32]$proc.Id,$ExpectedWindowTitle)
+            if($found.Length -gt 1) { throw 'Duplicate native Studio for tagged search.' }
+            if($found.Length -eq 1) { $fullWindow=$found[0];break }
+          }
+          if($fullWindow -eq [IntPtr]::Zero) {
+            throw 'Native Studio did not open on original-credit FLAC.'
+          }
+          $window=$fullWindow
+          # The prefilled, unedited title proves the provider uses original
+          # tags; editing the search text would disable auto ARTIST/VERSION.
+          if([FoobarHostWindow]::Text($window,291) -ne '1000 Years') {
+            throw 'Original TITLE was not prefilled from the tagged physical FLAC.'
+          }
+          if(-not [FoobarHostWindow]::SelectProvider($window,299,1) -or
+             -not [FoobarHostWindow]::SetText($window,301,$discogsQaToken) -or
+             -not [FoobarHostWindow]::Click($window,292)) {
+            throw 'Native full-artist Discogs Search gesture could not start.'
+          }
+          $reached=$false
+          $lastClicked=0
+          for($tick=0;$tick -lt 135;$tick++) {
+            Start-Sleep -Milliseconds 500
+            $proc.Refresh()
+            if($proc.HasExited) {throw 'foobar exited during native full-artist discovery.'}
+            $hint=[FoobarHostWindow]::Text($window,272)
+            if($hint -like 'Discogs read-only lookup failed:*' -or
+               [FoobarHostWindow]::Text($window,0) -like '*STALE snapshot*') {
+              throw 'AUTHORIZED_NATIVE_FULL_ARTIST=FAIL (lookup or source guard)'
+            }
+            if($hint -match 'Discogs query ([0-9]+)/([0-9]+) - ') {
+              $stage=[int]$Matches[1]
+              $stages=[int]$Matches[2]
+              if($stages -ne 10 -or $stage -lt 1 -or $stage -gt $stages) {
+                throw 'Native full-artist planner differed from qualified 10-stage plan.'
+              }
+              if($hint.Contains('Track with credited collaborator') -and
+                 $hint -match ': ([1-9][0-9]*) result\(s\)\.') {
+                if([FoobarHostWindow]::ListCount($window,271) -lt 1) {
+                  throw 'Native official collaborator results were not rendered.'
+                }
+                $reached=$true
+                break
+              }
+              # Each nonempty irrelevant page requires an explicit user
+              # Broaden click. Empty pages follow the normal automatic plan.
+              # Never send repeated requests while the previous one runs.
+              if($stage -ne $lastClicked -and
+                 [FoobarHostWindow]::Enabled($window,292) -and
+                 [FoobarHostWindow]::Text($window,292) -eq 'Broaden Discogs') {
+                if(-not [FoobarHostWindow]::Click($window,292)) {
+                  throw 'Native Broaden Discogs control refused user gesture.'
+                }
+                $lastClicked=$stage
+              }
+            }
+          }
+          if(-not $reached) {
+            throw 'AUTHORIZED_NATIVE_FULL_ARTIST=FAIL (no bounded collaborator result in actual foobar UI)'
+          }
+          Assert-FoobarFixtureUnchanged -Path $tagged -Before $taggedBefore
+          Assert-FoobarFixtureUnchanged -Path $fixture -Before $fixtureBefore
+          Write-Host "HOST_AUTHORIZED_DISCOGS_FULL_ARTIST_SEARCH_$Architecture=PASS (tagged original ARTIST, real Search/Broaden, collaborator results; read-only)"
+          # Exact release-ID correctness is independently checked through
+          # the authenticated official API harness. Owner-data result text
+          # cannot be read through foreign-process LVM_GETITEMTEXT; do NOT
+          # describe this GUI stage as complete exact-identity acceptance.
+        }
       } finally {
         # Best effort wipe from the actual masked native edit and shell.
         $null=[FoobarHostWindow]::SetText($window,301,'')

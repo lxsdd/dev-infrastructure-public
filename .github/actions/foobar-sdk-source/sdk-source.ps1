@@ -61,12 +61,12 @@ try {
       throw "Pinned SDK tree lacks required source/linker input: $relative"
     }
   }
-  if (-not (Get-Content -LiteralPath (Join-Path $vendor 'sdk-readme.html') -Raw).
-      Contains("foobar2000 SDK, version $Version")) {
+  $readme=Get-Content -LiteralPath (Join-Path $vendor 'sdk-readme.html') -Raw
+  if (-not $readme.Contains("foobar2000 SDK, version $Version")) {
     throw 'Owner SDK source readme has an incorrect version.'
   }
-  if (-not (Get-Content -LiteralPath (Join-Path $vendor 'sdk-license.txt') -Raw).
-      Contains('Redistribution and use in source and binary forms')) {
+  $license=Get-Content -LiteralPath (Join-Path $vendor 'sdk-license.txt') -Raw
+  if (-not $license.Contains('Redistribution and use in source and binary forms')) {
     throw 'Owner SDK source lacks its expected redistribution notice.'
   }
   New-Item -ItemType Directory -Path $staging -Force | Out-Null

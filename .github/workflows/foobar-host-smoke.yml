@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - ".github/actions/foobar-host-smoke/**"
+      - ".github/actions/foobar-sdk-source/**"
       - ".github/workflows/foobar-host-smoke.yml"
       - "docs/FOOBAR-HOST-MATRIX.md"
 
@@ -17,6 +18,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  owner-sdk-tree-contract:
+    # Uses the independently pinned owner Git source, never foobar2000.org.
+    # Stages source only inside the ephemeral Windows CI machine.
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify PowerShell source syntax without network
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location) '.github/actions/foobar-sdk-source/sdk-source.ps1'),
+            [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw ($errors | Out-String) }
+      - name: Install pinned SDK Git source under temporary runner path
+        uses: ./.github/actions/foobar-sdk-source
+        with:
+          sdk-root: ${{ runner.temp }}/foobar2000-sdk-2026-10-01
+      - name: Reject replacing preexisting pinned SDK tree
+        shell: pwsh
+        run: |
+          $path=Join-Path $env:RUNNER_TEMP 'foobar2000-sdk-2026-10-01'
+          foreach ($relative in @('sdk-license.txt','sdk-readme.html','foobar2000/shared/shared-Win32.lib','foobar2000/shared/shared-x64.lib')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $path $relative) -PathType Leaf)) {
+              throw "Verified pinned SDK output missing $relative"
+            }
+          }
+          $denied=$false
+          try {
+            & ./.github/actions/foobar-sdk-source/sdk-source.ps1 -SdkRoot $path
+          } catch { $denied=$true }
+          if (-not $denied) { throw 'Unchecked SDK overwrite unexpectedly accepted' }
+          Write-Host 'PASS: exact owner Git tree SDK source staged and guarded against overwrite'
+
   installer-cache-contract:
     # All test bytes are synthetic and local. Vendor reachability is NOT
     # needed to prove integrity, cache hit, tamper and partial cleanup.

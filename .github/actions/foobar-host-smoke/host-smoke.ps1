@@ -12,6 +12,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'synthetic-wave.ps1')
 . (Join-Path $PSScriptRoot 'synthetic-cue.ps1')
+. (Join-Path $PSScriptRoot 'pinned-installer-cache.ps1')
 
 # Immutable official-installer pins from microsoft/winget-pkgs:
 # manifests/p/PeterPawlowski/foobar2000/2.26.1/...installer.yaml
@@ -92,13 +93,12 @@ $spec=$specs[$Architecture]
 if (([uri]$spec.Url).Host -ne 'www.foobar2000.org') { throw 'Invalid official installer origin.' }
 $dir=Join-Path $env:RUNNER_TEMP ('fb2k-host-'+$Architecture+'-'+[guid]::NewGuid().ToString('N'))
 $target=Join-Path $dir 'host'
-$installer=Join-Path $dir 'official-installer.exe'
+$installer=$null
 $proc=$null
 try {
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
-  Invoke-WebRequest -Uri $spec.Url -OutFile $installer -ErrorAction Stop
-  $hash=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
-  if ($hash -ine $spec.Sha256) { throw "Installer SHA256 mismatch: $Architecture / $hash" }
+  $installer=Get-FoobarPinnedInstaller -Architecture $Architecture -Version '2.26.1' `
+    -Url $spec.Url -Sha256 $spec.Sha256 -CacheRoot $env:RUNNER_TEMP
   # NSIS /D must be the last argument. Runner temp path contains no spaces.
   $result=Start-Process -FilePath $installer -ArgumentList @('/S',"/D=$target") -Wait -PassThru
   if ($result.ExitCode -ne 0) { throw "Installer failed: $($result.ExitCode)" }

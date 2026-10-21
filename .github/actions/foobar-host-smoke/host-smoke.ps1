@@ -6,6 +6,7 @@ param(
   [string]$ContextCommand = '',
   [string]$ExpectedWindowTitle = '',
   [string]$RequiredControlIds = '',
+  [string]$InstallerMirrorUrl = '',
   [ValidateRange(10,120)][int]$StartupTimeoutSeconds = 35
 )
 Set-StrictMode -Version Latest
@@ -98,7 +99,7 @@ $proc=$null
 try {
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $installer=Get-FoobarPinnedInstaller -Architecture $Architecture -Version '2.26.1' `
-    -Url $spec.Url -Sha256 $spec.Sha256 -CacheRoot $env:RUNNER_TEMP
+    -Url $spec.Url -Sha256 $spec.Sha256 -CacheRoot $env:RUNNER_TEMP -MirrorUrl $InstallerMirrorUrl
   # NSIS /D must be the last argument. Runner temp path contains no spaces.
   $result=Start-Process -FilePath $installer -ArgumentList @('/S',"/D=$target") -Wait -PassThru
   if ($result.ExitCode -ne 0) { throw "Installer failed: $($result.ExitCode)" }

@@ -92,6 +92,15 @@ if (@(Get-Process -Name foobar2000 -ErrorAction SilentlyContinue).Count -gt 0) {
 }
 $spec=$specs[$Architecture]
 if (([uri]$spec.Url).Host -ne 'www.foobar2000.org') { throw 'Invalid official installer origin.' }
+# Original EXE mirror provisioned and independently re-downloaded/verified on
+# 2026-10-21. Default all native host jobs to OUR own immutable GitHub assets;
+# never retry the upstream PHP-hosted site after its security shutdown.
+if ([string]::IsNullOrWhiteSpace($InstallerMirrorUrl)) {
+  $name = if ($Architecture -eq 'Win32') { 'foobar2000_v2.26.1.exe' } else { 'foobar2000-x64_v2.26.1.exe' }
+  $InstallerMirrorUrl = 'https://github.com/lxsdd/dev-infrastructure-public/releases/download/foobar-ci-upstream-v2.26.1/' + $name
+}
+Write-Host "FOOBAR_INSTALLER_SOURCE=GITHUB_ORIGINAL_ASSET arch=$Architecture version=2.26.1"
+
 $dir=Join-Path $env:RUNNER_TEMP ('fb2k-host-'+$Architecture+'-'+[guid]::NewGuid().ToString('N'))
 $target=Join-Path $dir 'host'
 $installer=$null

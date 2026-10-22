@@ -20,7 +20,7 @@ MIN_CONSUMERS = {
     "publication-guard": 3,
     "wpf-touchpad-router": 2,
     "foobar-component-verifier": 2,
-    "bridge-v3-cue-golden": 1,
+    "bridge-v3-cue-golden": 2,
 }
 REPO_RE = re.compile(r"^lxsdd/[a-zA-Z0-9_.-]+$")
 PATH_RE = re.compile(r"^[a-zA-Z0-9_.\-/]+$")
@@ -128,7 +128,7 @@ def main():
             print("FAIL:", error, file=sys.stderr)
         print(f"FAIL: shared source drift audit ({len(errors)}/{count} unresolved)")
         return 1
-    print(f"PASS: shared source drift audit verified={count} expected=12")
+    print(f"PASS: shared source drift audit verified={count} expected=13")
     return 0
 
 

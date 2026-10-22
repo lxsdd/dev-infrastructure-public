@@ -71,6 +71,10 @@
         {
           "repo": "lxsdd/rekordbox-mytag-sync",
           "path": "tests/fixtures/bridge-v3-cue-identity.tsv"
+        },
+        {
+          "repo": "lxsdd/dj-library-public",
+          "path": "tests/fixtures/bridge-v3-cue-identity.tsv"
         }
       ]
     }

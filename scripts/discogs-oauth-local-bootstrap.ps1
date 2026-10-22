@@ -323,48 +323,18 @@ try {
     Write-Host 'PASS: Lokale Einrichtung abgeschlossen. Fenster kann geschlossen werden.'
 }
 catch {
-    # Never print raw PowerShell/HTTP exceptions or signed request headers.
+    # Only allow-listed symbolic codes: never print raw exceptions or API bodies.
     Write-Host 'Einrichtung nicht abgeschlossen. Keine automatischen GitHub-Aenderungen.' -ForegroundColor Yellow
     $diagnostic = [string]$_.Exception.Message
-    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT|PREPARE)
+    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT|PREPARE)$' -or
+        $diagnostic -cmatch '^DISCOGS_OAUTH_TOKEN_PARSE_(EMPTY|TOO_LARGE|NOT_FORM|FORM|MISSING_FIELD|INVALID_VALUE|CALLBACK)$') {
         Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
-    } else {
-        if ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {
-            Write-Host ('Sicherer Diagnosecode: LOCAL_BOOTSTRAP_' + $stage)
-        } else {
-            Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_UNKNOWN'
-        }
     }
-    Write-Host 'Bitte nur den Diagnosecode, nie den Token oder Secret-Wert, weitergeben.'
-    exit 1
-}
-finally {
-    Remove-Variable consumerKey, consumerSecret, verifier, tmp, access, rawIdentity, identity, authUrl -ErrorAction SilentlyContinue
-}
- -or
-        $diagnostic -cmatch '^DISCOGS_OAUTH_TOKEN_PARSE_(EMPTY|TOO_LARGE|NOT_FORM|FORM|MISSING_FIELD|INVALID_VALUE|CALLBACK)
-        Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
-    } else {
-        if ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {
-            Write-Host ('Sicherer Diagnosecode: LOCAL_BOOTSTRAP_' + $stage)
-        } else {
-            Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_UNKNOWN'
-        }
+    elseif ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {
+        Write-Host ('Sicherer Diagnosecode: LOCAL_BOOTSTRAP_' + $stage)
     }
-    Write-Host 'Bitte nur den Diagnosecode, nie den Token oder Secret-Wert, weitergeben.'
-    exit 1
-}
-finally {
-    Remove-Variable consumerKey, consumerSecret, verifier, tmp, access, rawIdentity, identity, authUrl -ErrorAction SilentlyContinue
-}
-) {
-        Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
-    } else {
-        if ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {
-            Write-Host ('Sicherer Diagnosecode: LOCAL_BOOTSTRAP_' + $stage)
-        } else {
-            Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_UNKNOWN'
-        }
+    else {
+        Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_UNKNOWN'
     }
     Write-Host 'Bitte nur den Diagnosecode, nie den Token oder Secret-Wert, weitergeben.'
     exit 1

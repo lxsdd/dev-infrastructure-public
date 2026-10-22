@@ -34,6 +34,12 @@ jobs:
       - name: 'PowerShell 7: independent engine sanity'
         shell: pwsh
         run: ./scripts/discogs-oauth-local-bootstrap.ps1 -SelfTest
+      - name: Windows PowerShell 5.1 whole mocked OAuth authorization and clipboard lifecycle
+        shell: powershell
+        run: ./tests/discogs-oauth-bootstrap-interactive-mock.ps1
+      - name: PowerShell 7 whole mocked OAuth authorization and clipboard lifecycle
+        shell: pwsh
+        run: ./tests/discogs-oauth-bootstrap-interactive-mock.ps1
       - name: No accidental network, secrets or clipboard use during selftests
         shell: pwsh
         run: |

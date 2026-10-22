@@ -21,3 +21,7 @@ No extra runtime or account credentials are required, and this process does not 
 The manual workflow `discogs-oauth-live-qa.yml` runs only from protected main, references the selected-branch environment, and performs only official read-only identity/release/search GET requests. No third-party component binaries, PR code, user media, dynamic repository names, identity output, or artifacts are used. It never proves actual native Discogger GUI/tag-writing acceptance: that must be established separately with pinned, reviewed binaries and disposable synthetic media.
 
 Repo-local CI must not receive central credentials. A reusable `workflow_call` is **not** a cross-repository secret store. Future orchestration needs strictly limited, reviewed code and authorization. Never paste credentials into issues, PRs, chats, logs, or sources.
+
+## OAuth1 signature compatibility
+
+The original manual Windows bootstrap failed before the PIN stage. The local helper and central read-only QA now use Discogs-compatible OAuth1 **PLAINTEXT** signatures over verified **HTTPS only**, not HMAC-SHA1. This method includes secret components inside the TLS-protected Authorization header, so headers, HTTP exceptions and full responses must never be printed. The local CLI reports only the endpoint and safe status-code diagnostic. The original helper also had a PowerShell inline-hashtable conditional that could fail at runtime; offline tests now construct request headers in Windows PowerShell 5.1 and 7.

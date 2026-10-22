@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 """Official Discogs OAuth1 read-only QA. Never log credentials, responses, identities or headers."""
-import base64
-import hashlib
-import hmac
 import http.client
 import json
 import os
@@ -11,7 +8,7 @@ import secrets
 import ssl
 import sys
 import time
-from urllib.parse import quote, urlencode, urlsplit, parse_qsl
+from urllib.parse import quote, urlencode, urlsplit
 
 HOST = "api.discogs.com"
 BASE = "https://" + HOST
@@ -36,23 +33,19 @@ def escape(value):
 
 def authorization(method, url, consumer_key, consumer_secret, token, token_secret, nonce, stamp):
     parts = urlsplit(url)
-    if parts.scheme != "https" or parts.netloc != HOST or parts.fragment:
-        raise ValueError("Refusing unapproved endpoint")
+    if method != "GET" or parts.scheme != "https" or parts.netloc != HOST or parts.fragment:
+        raise ValueError("Refusing unapproved OAuth request")
+    # Discogs OAuth 1.0a uses PLAINTEXT signatures on its fixed HTTPS API.
+    # The secrets occur only in the Authorization header, never logs/URLs.
     oauth = {
         "oauth_consumer_key": consumer_key,
         "oauth_token": token,
-        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_signature_method": "PLAINTEXT",
         "oauth_timestamp": str(stamp),
         "oauth_nonce": nonce,
         "oauth_version": "1.0",
+        "oauth_signature": escape(consumer_secret) + "&" + escape(token_secret),
     }
-    pairs = list(parse_qsl(parts.query, keep_blank_values=True)) + list(oauth.items())
-    normalized = "&".join(k + "=" + v for k, v in sorted((escape(k), escape(v)) for k, v in pairs))
-    canonical_url = BASE + parts.path
-    base_string = "&".join((escape(method.upper()), escape(canonical_url), escape(normalized)))
-    key = (escape(consumer_secret) + "&" + escape(token_secret)).encode("ascii")
-    signature = base64.b64encode(hmac.new(key, base_string.encode("ascii"), hashlib.sha1).digest()).decode("ascii")
-    oauth["oauth_signature"] = signature
     return "OAuth " + ", ".join(escape(k) + '="' + escape(v) + '"' for k, v in sorted(oauth.items()))
 
 
@@ -62,13 +55,17 @@ def selftest():
     a = authorization("GET", url, *k, "fixed-nonce", 100)
     b = authorization("GET", url, *k, "fixed-nonce", 100)
     assert a == b and a.startswith("OAuth oauth_consumer_key=")
-    assert "synthetic-secret" not in a and "synthetic-token-secret" not in a
+    assert 'oauth_signature_method="PLAINTEXT"' in a
+    assert 'oauth_signature="synthetic-secret%26synthetic-token-secret"' in a
+    assert 'oauth_nonce="fixed-nonce"' in a
     assert a != authorization("GET", url, *k, "different-nonce", 100)
-    try:
-        authorization("GET", "https://attacker.invalid/", *k, "fixed-nonce", 100)
-        raise AssertionError("Foreign OAuth host accepted")
-    except ValueError:
-        pass
+    for method, location in (("POST", url), ("GET", "https://attacker.invalid/"),
+                             ("GET", "http://api.discogs.com/oauth/identity")):
+        try:
+            authorization(method, location, *k, "fixed-nonce", 100)
+            raise AssertionError("Unapproved OAuth request accepted")
+        except ValueError:
+            pass
     print("DISCOGS_CENTRAL_OAUTH_SELFTEST=PASS (synthetic credentials only)")
 
 

@@ -37,12 +37,12 @@ def main():
             payloads[(target["repo"], target["path"])] = source
 
     count, errors = check_registry(fixture, lambda repo, path: payloads[(repo, path)])
-    assert count == 12 and errors == [], (count, errors)
+    assert count == 13 and errors == [], (count, errors)
 
     count, errors = check_registry(
         fixture, lambda repo, path: payloads[(repo, path)] + b"!"
     )
-    assert count == 12 and len(errors) == 12
+    assert count == 13 and len(errors) == 13
     assert all("SOURCE_DRIFT" in error for error in errors)
 
     missing = dict(payloads)
@@ -53,11 +53,11 @@ def main():
             raise OSError("synthetic 404")
         return missing[(repo, path)]
     count, errors = check_registry(fixture, missing_fetch)
-    assert count == 12 and len(errors) == 1
+    assert count == 13 and len(errors) == 1
     assert "NOT_VERIFIED" in errors[0]
 
     count, errors = check_registry(fixture, lambda repo, path: "unsafe str")
-    assert count == 12 and len(errors) == 12
+    assert count == 13 and len(errors) == 13
     assert all("NOT_VERIFIED" in error for error in errors)
 
     mutated = copy.deepcopy(original)
@@ -82,7 +82,7 @@ def main():
     mutated["contracts"][1]["id"] = mutated["contracts"][0]["id"]
     rejects(mutated)
 
-    print("PASS: 12 public targets, real Git blob header and 10 adversarial classes")
+    print("PASS: 13 public targets, real Git blob header and 10 adversarial classes")
 
 
 if __name__ == "__main__":

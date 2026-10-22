@@ -205,17 +205,10 @@ try {
     Write-Host 'PASS: Lokale Einrichtung abgeschlossen. Fenster kann geschlossen werden.'
 }
 catch {
-    # NEVER print exception details: may include sensitive data from infrastructure.
+    # Never print raw PowerShell/HTTP exceptions or signed request headers.
     Write-Host 'Einrichtung nicht abgeschlossen. Keine automatischen GitHub-Aenderungen.' -ForegroundColor Yellow
-    # Only preformatted, regex-validated status codes may be printed.
     $diagnostic = [string]$_.Exception.Message
-    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT)
-    exit 1
-}
-finally {
-    Remove-Variable consumerKey, consumerSecret, verifier, tmp, access, rawIdentity, identity, authUrl -ErrorAction SilentlyContinue
-}
-) {
+    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT)$') {
         Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
     } else {
         Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_ERROR'

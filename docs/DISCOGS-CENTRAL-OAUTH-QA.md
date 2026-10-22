@@ -1,17 +1,23 @@
 # Central Discogs OAuth QA – protected environment
 
-Location: lxsdd/dev-infrastructure-public, protected main, environment \`discogs-live-qa\`.
-The public repository contains **no credentials**. Set four **environment** secrets (not ordinary repository secrets):
+Central repository: `lxsdd/dev-infrastructure-public`, protected `main`, environment `discogs-live-qa`.
+The repository contains **no credentials**. The four **environment** secrets are:
 
-- \`DISCOGS_OAUTH_CONSUMER_KEY\`: Discogs registered application consumer key.
-- \`DISCOGS_OAUTH_CONSUMER_SECRET\`: matching application consumer secret.
-- \`DISCOGS_OAUTH_ACCESS_TOKEN\`: authorized Discogs OAuth1 access token (not a personal access token).
-- \`DISCOGS_OAUTH_TOKEN_SECRET\`: matching OAuth1 access token secret.
+- `DISCOGS_OAUTH_CONSUMER_KEY` – newly registered Discogs application Consumer Key.
+- `DISCOGS_OAUTH_CONSUMER_SECRET` – matching Consumer Secret.
+- `DISCOGS_OAUTH_ACCESS_TOKEN` – OAuth1 token authorized for this SAME application (not a personal access token or the OAuth token from older Discogger).
+- `DISCOGS_OAUTH_TOKEN_SECRET` – matching token secret.
 
-The manual workflow runs only from protected central main, uses the selected-branch environment, and performs only official read-only identity, release and search GET requests. No third-party component binaries, PR code, user media, or dynamically named repositories are executed. Logs contain only fixed public release IDs and PASS/REVIEW markers; no API payload, identity, authorization header or secret is logged. No artifacts.
+## One-time OAuth1 browser authorization
 
-Repo-local CI must not receive central secrets. A reusable \`workflow_call\` is NOT a cross-repository secret store; the caller context and secret propagation rules differ. For now authorized central tests are manually started through GitHub Actions. Future orchestration requires narrowly scoped authentication and a reviewed exact-SHA allowlist.
+With the new Consumer Key and Secret already saved at GitHub, obtain the paired Access Token/Token Secret through the official Discogs OAuth flow. In Windows PowerShell 5.1 or PowerShell 7 run the reviewed source-only helper `scripts/discogs-oauth-local-bootstrap.ps1` with no arguments. The helper prompts for the application Consumer Key and Consumer Secret **privately**, signs a POST to `api.discogs.com/oauth/request_token`, opens the official Discogs authorization page, prompts for the private PIN, signs a POST to `api.discogs.com/oauth/access_token`, and verifies identity via a **GET** to `api.discogs.com/oauth/identity`.
 
-This tests the authenticated **Discogs OAuth1 API**, not native Discogger GUI selection/tag writes. It also does not replace an existing Personal Access Token held in another repo's read-only API QA. Native GUI write acceptance is a separate SHA-pinned follow-on using disposable synthetic media.
+After the independent identity test, the helper guides you through inserting **only the two new Access values** as Environment Secrets at GitHub. They are copied **one at a time** to the local clipboard; no values are printed in a console, stored in a file, sent to ChatGPT or committed. The clipboard is cleared after each confirmation if it still contains the token. An unexpected termination may leave the last value in the clipboard: clear it manually.
 
-Never paste credentials into any issue, PR, chat, source file or workflow log. Revoke compromised credentials immediately. Maintain main branch protection and review workflow/script changes before merging.
+No extra runtime or account credentials are required, and this process does not modify existing Discogger authentication. Do not pipe downloaded scripts directly into a shell; review the file and run it locally.
+
+## Central test boundary
+
+The manual workflow `discogs-oauth-live-qa.yml` runs only from protected main, references the selected-branch environment, and performs only official read-only identity/release/search GET requests. No third-party component binaries, PR code, user media, dynamic repository names, identity output, or artifacts are used. It never proves actual native Discogger GUI/tag-writing acceptance: that must be established separately with pinned, reviewed binaries and disposable synthetic media.
+
+Repo-local CI must not receive central credentials. A reusable `workflow_call` is **not** a cross-repository secret store. Future orchestration needs strictly limited, reviewed code and authorization. Never paste credentials into issues, PRs, chats, logs, or sources.

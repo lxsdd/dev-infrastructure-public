@@ -34,7 +34,7 @@ def _disabled(lines: list[str], position: int) -> bool:
     for at in range(position, -1, -1):
         row = lines[at]
         if STEP.match(row.lstrip()) and not row.lstrip().startswith("#"):
-            if at == position and row.lstrip().startswith("- uses:"):
+            if at == position and row.lstrip().startswith(("- uses:", "- name:", "- run:")):
                 step_start, step_indent = at, _level(row)
                 break
             if _level(row) < _level(lines[position]):
@@ -63,10 +63,15 @@ def _specified_gate(lines: list[str], label: str, kind: str) -> bool:
     if kind == "job":
         positions = [i for i, line in enumerate(lines)
                      if line == "  " + label + ":"]
-        return len(positions) == 1 and any(
-            _level(x) == 4 and FALSE_IF.fullmatch(x.strip())
-            for x in lines[positions[0] + 1:]
-            if x.startswith("    ") and not x.startswith("      "))
+        if kind == "job":
+        if len(positions) != 1:
+            return False
+        for row in lines[positions[0] + 1:]:
+            if row.strip() and _level(row) <= 2:
+                break
+            if _level(row) == 4 and FALSE_IF.fullmatch(row.strip()):
+                return True
+        return False
     positions = [i for i, row in enumerate(lines)
                  if row.strip() == "- name: " + label]
     return len(positions) == 1 and _disabled(lines, positions[0])

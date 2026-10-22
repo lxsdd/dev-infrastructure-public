@@ -32,21 +32,44 @@ function New-Nonce {
 function Get-OAuthSignature([string]$ConsumerSecret, [string]$TokenSecret) {
     return (Escape-OAuth $ConsumerSecret) + '&' + (Escape-OAuth $TokenSecret)
 }
-function Parse-TokenReply([string]$Body) {
-    if ($Body.Length -gt 8192) { throw 'Discogs-OAuth-Antwort zu gross.' }
+function Parse-TokenReply([AllowEmptyString()][string]$Body) {
+    # OAuth1 responses use form-urlencoded encoding, not base64url tokens.
+    # Never print arbitrary response bodies, unknown fields or token values.
+    if ([string]::IsNullOrWhiteSpace($Body)) { throw 'DISCOGS_OAUTH_TOKEN_PARSE_EMPTY' }
+    if ($Body.Length -gt 8192) { throw 'DISCOGS_OAUTH_TOKEN_PARSE_TOO_LARGE' }
+    $form = $Body.Trim().TrimStart([char]0xFEFF)
+    if ($form -notmatch '(^|&)oauth_token=') {
+        throw 'DISCOGS_OAUTH_TOKEN_PARSE_NOT_FORM'
+    }
     $values = @{}
-    foreach ($part in $Body.Split('&')) {
-        $kv = $part.Split('=', 2)
-        if ($kv.Count -ne 2) { throw 'Discogs-OAuth-Antwort unvollstaendig.' }
-        $name = [Uri]::UnescapeDataString($kv[0].Replace('+', ' '))
-        if ($values.ContainsKey($name)) { throw 'Doppeltes OAuth-Feld verweigert.' }
-        $values[$name] = [Uri]::UnescapeDataString($kv[1].Replace('+', ' '))
+    foreach ($part in $form.Split([char]'&')) {
+        $kv = $part.Split([char[]]@('='), 2)
+        if ($kv.Count -ne 2) { throw 'DISCOGS_OAUTH_TOKEN_PARSE_FORM' }
+        try {
+            $name = [Uri]::UnescapeDataString($kv[0].Replace('+', ' '))
+            $value = [Uri]::UnescapeDataString($kv[1].Replace('+', ' '))
+        }
+        catch { throw 'DISCOGS_OAUTH_TOKEN_PARSE_FORM' }
+        if ([string]::IsNullOrWhiteSpace($name) -or $values.ContainsKey($name)) {
+            throw 'DISCOGS_OAUTH_TOKEN_PARSE_FORM'
+        }
+        $values[$name] = $value
     }
     foreach ($field in @('oauth_token', 'oauth_token_secret')) {
-        if (-not $values.ContainsKey($field) -or
-            [string]$values[$field] -cnotmatch '^[A-Za-z0-9_-]{8,512}$') {
-            throw 'Ungueltiger oder fehlender OAuth-Wert.'
+        if (-not $values.ContainsKey($field)) {
+            throw 'DISCOGS_OAUTH_TOKEN_PARSE_MISSING_FIELD'
         }
+        $value = [string]$values[$field]
+        # Discogs tokens can contain URL-encoded punctuation, unlike base64url.
+        # Permit legitimate punctuation while rejecting control characters.
+        if ($value.Length -lt 1 -or $value.Length -gt 1024 -or
+            $value -match '[\x00-\x1f\x7f]') {
+            throw 'DISCOGS_OAUTH_TOKEN_PARSE_INVALID_VALUE'
+        }
+    }
+    if ($values.ContainsKey('oauth_callback_confirmed') -and
+        [string]$values['oauth_callback_confirmed'] -cne 'true') {
+        throw 'DISCOGS_OAUTH_TOKEN_PARSE_CALLBACK'
     }
     return $values
 }
@@ -80,7 +103,7 @@ function New-OfficialDiscogsRequest([string]$Endpoint, [string]$Method,
         'User-Agent' = 'MusicMetadataQA-OAuthSetup/1.1 (+https://github.com/lxsdd/dev-infrastructure-public)'
         Accept = $accept
     }
-    if ($Endpoint -ceq 'access_token') {
+    if ($Endpoint -ceq 'access_token' -or $Endpoint -ceq 'request_token') {
         $headers['Content-Type'] = 'application/x-www-form-urlencoded'
     }
     return @{ Url = $url; Method = $Method; Headers = $headers }
@@ -176,6 +199,33 @@ function Run-SelfTest {
     try { [void](New-OfficialDiscogsRequest 'request_token' 'POST' 'synthetic_key' 'synthetic_secret') }
     catch { $denied = $true }
     if (-not $denied) { throw 'Unsupported OAuth HTTP method allowed.' }
+    $encoded = Parse-TokenReply ('oauth_token=ab%2Bcd%2Fef%3D%3D%21%40%3A%24%28%29' +
+        '&oauth_token_secret=q%2Br%2Fs%3D%3D%40%21%25%3F&oauth_callback_confirmed=true')
+    if ($encoded['oauth_token'] -cne 'ab+cd/ef==!@:$()' -or
+        $encoded['oauth_token_secret'] -cne 'q+r/s==@!%?') {
+        throw 'Legitimate URL-encoded token punctuation rejected'
+    }
+    $fromBOM = Parse-TokenReply ([char]0xFEFF + 'oauth_token=bomToken123&oauth_token_secret=bomSecret123' + [char]13 + [char]10)
+    if ($fromBOM['oauth_token'] -cne 'bomToken123' -or $fromBOM['oauth_token_secret'] -cne 'bomSecret123') {
+        throw 'BOM or trailing CRLF parse regression'
+    }
+    $extra = Parse-TokenReply 'extra_a=value&oauth_token=with.dots.12345&oauth_token_secret=with%2Fpunctuation%3D&extra_b=again'
+    if ($extra['oauth_token'] -cne 'with.dots.12345' -or
+        $extra['oauth_token_secret'] -cne 'with/punctuation=') {
+        throw 'Form decoding or extra fields parse regression'
+    }
+    $parseCases = @(
+        @{Body='oauth_token=x';Code='DISCOGS_OAUTH_TOKEN_PARSE_MISSING_FIELD'},
+        @{Body='{"error":"no token"}';Code='DISCOGS_OAUTH_TOKEN_PARSE_NOT_FORM'},
+        @{Body='oauth_token=some&oauth_token_secret=abc%0D%0Axyz';Code='DISCOGS_OAUTH_TOKEN_PARSE_INVALID_VALUE'},
+        @{Body='oauth_token=a&oauth_token_secret=b&oauth_callback_confirmed=false';Code='DISCOGS_OAUTH_TOKEN_PARSE_CALLBACK'}
+    )
+    foreach ($case in $parseCases) {
+        $blocked = $false
+        try { [void](Parse-TokenReply $case.Body) }
+        catch { $blocked = $_.Exception.Message -ceq $case.Code }
+        if (-not $blocked) { throw 'Unsafe OAuth parser error classification' }
+    }
     $parsed = Parse-TokenReply 'oauth_token=abcdefgh12345678&oauth_token_secret=abcdefghi9876543&oauth_callback_confirmed=true'
     if ($parsed['oauth_token'] -cne 'abcdefgh12345678' -or $parsed['oauth_token_secret'] -cne 'abcdefghi9876543') {
         throw 'Token response parse regression.'
@@ -276,7 +326,38 @@ catch {
     # Never print raw PowerShell/HTTP exceptions or signed request headers.
     Write-Host 'Einrichtung nicht abgeschlossen. Keine automatischen GitHub-Aenderungen.' -ForegroundColor Yellow
     $diagnostic = [string]$_.Exception.Message
-    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT)$') {
+    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT|PREPARE)
+        Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
+    } else {
+        if ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {
+            Write-Host ('Sicherer Diagnosecode: LOCAL_BOOTSTRAP_' + $stage)
+        } else {
+            Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_UNKNOWN'
+        }
+    }
+    Write-Host 'Bitte nur den Diagnosecode, nie den Token oder Secret-Wert, weitergeben.'
+    exit 1
+}
+finally {
+    Remove-Variable consumerKey, consumerSecret, verifier, tmp, access, rawIdentity, identity, authUrl -ErrorAction SilentlyContinue
+}
+ -or
+        $diagnostic -cmatch '^DISCOGS_OAUTH_TOKEN_PARSE_(EMPTY|TOO_LARGE|NOT_FORM|FORM|MISSING_FIELD|INVALID_VALUE|CALLBACK)
+        Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
+    } else {
+        if ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {
+            Write-Host ('Sicherer Diagnosecode: LOCAL_BOOTSTRAP_' + $stage)
+        } else {
+            Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_UNKNOWN'
+        }
+    }
+    Write-Host 'Bitte nur den Diagnosecode, nie den Token oder Secret-Wert, weitergeben.'
+    exit 1
+}
+finally {
+    Remove-Variable consumerKey, consumerSecret, verifier, tmp, access, rawIdentity, identity, authUrl -ErrorAction SilentlyContinue
+}
+) {
         Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
     } else {
         if ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {

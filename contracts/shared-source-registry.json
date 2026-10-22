@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "policy": "Public source-only central contract registry; immutable Git object identity, consumer copies remain pinned; not a license, binary release, device, or live-data authorization.",
+  "contracts": [
+    {
+      "id": "publication-guard",
+      "sha1": "2de36b9f8ff429aca93841907f9106f11ebe9886",
+      "owner": {
+        "repo": "lxsdd/dev-infrastructure-public",
+        "path": "shared/ci/publication_guard.py"
+      },
+      "consumers": [
+        {
+          "repo": "lxsdd/music-metadata-studio",
+          "path": "scripts/_shared_publication_guard.py"
+        },
+        {
+          "repo": "lxsdd/foo_dj_library_bridge",
+          "path": "scripts/_shared_publication_guard.py"
+        },
+        {
+          "repo": "lxsdd/rekordbox-mytag-sync",
+          "path": "scripts/_shared_publication_guard.py"
+        }
+      ]
+    },
+    {
+      "id": "wpf-touchpad-router",
+      "sha1": "23046d3df6b6490ba31576ec5b46859704cf6a17",
+      "owner": {
+        "repo": "lxsdd/dev-infrastructure-public",
+        "path": "shared/wpf/HorizontalScrollSupport.cs"
+      },
+      "consumers": [
+        {
+          "repo": "lxsdd/dj-library-public",
+          "path": "src/SharedHorizontalScrollSupport.cs"
+        },
+        {
+          "repo": "lxsdd/rekordbox-mytag-sync",
+          "path": "src/RekordboxMyTagSync/SharedHorizontalScrollSupport.cs"
+        }
+      ]
+    },
+    {
+      "id": "foobar-component-verifier",
+      "sha1": "26fe194bdc429337a8ddc06e2e14ff6a9f03840d",
+      "owner": {
+        "repo": "lxsdd/foobar2000_component_template",
+        "path": "ci/verify-fb2k-component.ps1"
+      },
+      "consumers": [
+        {
+          "repo": "lxsdd/foo_metadata_isolation-public",
+          "path": "ci/verify-fb2k-component.ps1"
+        },
+        {
+          "repo": "lxsdd/foo_smart_tempo-public",
+          "path": "tools/verify-fb2k-component.ps1"
+        }
+      ]
+    },
+    {
+      "id": "bridge-v3-cue-golden",
+      "sha1": "f3b75d4608bacba23b2fd21b3350a7966e668a2e",
+      "owner": {
+        "repo": "lxsdd/foo_dj_library_bridge",
+        "path": "tests/contracts/bridge-v3-cue-identity.tsv"
+      },
+      "consumers": [
+        {
+          "repo": "lxsdd/rekordbox-mytag-sync",
+          "path": "tests/fixtures/bridge-v3-cue-identity.tsv"
+        }
+      ]
+    }
+  ]
+}

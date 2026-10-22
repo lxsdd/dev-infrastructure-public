@@ -28,10 +28,10 @@ jobs:
             (Join-Path (Get-Location) 'scripts/discogs-oauth-local-bootstrap.ps1'),
             [ref]$t,[ref]$e)
           if($e.Count){throw "PowerShell syntax errors: $($e.Count)"}
-      - name: Windows PowerShell 5.1: RFC3986 and HMAC-SHA1 signature/response tests
+      - name: 'Windows PowerShell 5.1: RFC3986 and HMAC-SHA1 signature/response tests'
         shell: powershell
         run: ./scripts/discogs-oauth-local-bootstrap.ps1 -SelfTest
-      - name: PowerShell 7: independent engine sanity
+      - name: 'PowerShell 7: independent engine sanity'
         shell: pwsh
         run: ./scripts/discogs-oauth-local-bootstrap.ps1 -SelfTest
       - name: No accidental network, secrets or clipboard use during selftests

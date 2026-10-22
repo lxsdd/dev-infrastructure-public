@@ -6,6 +6,9 @@ on:
     paths:
       - 'PUBLIC_SCOPE.md'
       - 'tests/**'
+      - 'contracts/**'
+      - 'scripts/audit_shared_source_drift.py'
+      - 'shared/**'
       - '.github/workflows/public-baseline.yml'
   pull_request:
     branches:
@@ -26,3 +29,15 @@ jobs:
           python3 tests/check_fixture.py
           python3 tests/check_ci_dispatch.py
           python3 tests/check_publication_guard.py
+
+  shared-source-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate immutable shared-source registry with synthetic mutations
+        run: python3 tests/check_shared_source_drift.py
+      - name: Verify all owner and consumer main Git blobs (read-only)
+        run: python3 scripts/audit_shared_source_drift.py --live

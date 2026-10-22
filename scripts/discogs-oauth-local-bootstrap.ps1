@@ -27,20 +27,10 @@ function New-Nonce {
     finally { $rng.Dispose() }
     return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
-function Get-OAuthSignature([string]$Method, [string]$Url, [hashtable]$Params,
-                            [string]$ConsumerSecret, [string]$TokenSecret) {
-    $pairs = [Collections.Generic.List[string]]::new()
-    foreach ($key in $Params.Keys) {
-        $pairs.Add((Escape-OAuth ([string]$key)) + '=' + (Escape-OAuth ([string]$Params[$key])))
-    }
-    $sorted = $pairs.ToArray()
-    [Array]::Sort($sorted, [StringComparer]::Ordinal)
-    $baseString = (Escape-OAuth ($Method.ToUpperInvariant())) + '&' +
-        (Escape-OAuth $Url) + '&' + (Escape-OAuth ($sorted -join '&'))
-    $secret = (Escape-OAuth $ConsumerSecret) + '&' + (Escape-OAuth $TokenSecret)
-    $hmac = [Security.Cryptography.HMACSHA1]::new([Text.Encoding]::UTF8.GetBytes($secret))
-    try { return [Convert]::ToBase64String($hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($baseString))) }
-    finally { $hmac.Dispose() }
+# Only fixed-host HTTPS transports signed requests. Discogs OAuth1 uses
+# PLAINTEXT signatures: escaped consumer secret, &, escaped token secret.
+function Get-OAuthSignature([string]$ConsumerSecret, [string]$TokenSecret) {
+    return (Escape-OAuth $ConsumerSecret) + '&' + (Escape-OAuth $TokenSecret)
 }
 function Parse-TokenReply([string]$Body) {
     if ($Body.Length -gt 8192) { throw 'Discogs-OAuth-Antwort zu gross.' }
@@ -60,41 +50,58 @@ function Parse-TokenReply([string]$Body) {
     }
     return $values
 }
-function Invoke-OfficialDiscogs([string]$Endpoint, [string]$Method,
+function New-OfficialDiscogsRequest([string]$Endpoint, [string]$Method,
     [string]$ConsumerKey, [string]$ConsumerSecret,
     [string]$Token = '', [string]$TokenSecret = '', [string]$Verifier = '') {
-    if ($Endpoint -cnotin @('request_token', 'access_token', 'identity')) {
-        throw 'Ungueltige OAuth-Ressource.'
+    $allowed = @{ request_token = 'GET'; access_token = 'POST'; identity = 'GET' }
+    if (-not $allowed.ContainsKey($Endpoint) -or $Method -cne $allowed[$Endpoint]) {
+        throw 'Unapproved OAuth resource or HTTP method.'
     }
     $url = 'https://api.discogs.com/oauth/' + $Endpoint
     $parameters = @{
         oauth_consumer_key = $ConsumerKey
         oauth_nonce = New-Nonce
-        oauth_signature_method = 'HMAC-SHA1'
+        oauth_signature_method = 'PLAINTEXT'
         oauth_timestamp = ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()).ToString()
         oauth_version = '1.0'
     }
     if ($Endpoint -ceq 'request_token') { $parameters['oauth_callback'] = 'oob' }
     if ($Token) { $parameters['oauth_token'] = $Token }
     if ($Verifier) { $parameters['oauth_verifier'] = $Verifier }
-    $parameters['oauth_signature'] = Get-OAuthSignature $Method $url $parameters $ConsumerSecret $TokenSecret
+    $parameters['oauth_signature'] = Get-OAuthSignature $ConsumerSecret $TokenSecret
     $authorization = [Collections.Generic.List[string]]::new()
     foreach ($key in @($parameters.Keys | Sort-Object)) {
         $authorization.Add((Escape-OAuth ([string]$key)) + '="' + (Escape-OAuth ([string]$parameters[$key])) + '"')
     }
+    # No inline 'if' within a hashtable member: WinPS 5.1 may execute it as a command.
+    $accept = if ($Endpoint -ceq 'identity') { 'application/json' } else { '*/*' }
     $headers = @{
         Authorization = 'OAuth ' + ($authorization -join ', ')
-        'User-Agent' = 'MusicMetadataQA-OAuthSetup/1.0 (+https://github.com/lxsdd/dev-infrastructure-public)'
-        Accept = if ($Endpoint -ceq 'identity') { 'application/json' } else { '*/*' }
+        'User-Agent' = 'MusicMetadataQA-OAuthSetup/1.1 (+https://github.com/lxsdd/dev-infrastructure-public)'
+        Accept = $accept
     }
+    return @{ Url = $url; Method = $Method; Headers = $headers }
+}
+function Invoke-OfficialDiscogs([string]$Endpoint, [string]$Method,
+    [string]$ConsumerKey, [string]$ConsumerSecret,
+    [string]$Token = '', [string]$TokenSecret = '', [string]$Verifier = '') {
+    $request = New-OfficialDiscogsRequest $Endpoint $Method $ConsumerKey $ConsumerSecret $Token $TokenSecret $Verifier
     try {
-        $response = Invoke-WebRequest -Uri $url -Method $Method -Headers $headers -UseBasicParsing -TimeoutSec 25 -MaximumRedirection 0
-        if ([int]$response.StatusCode -ne 200) { throw 'Incorrect response status' }
+        $response = Invoke-WebRequest -Uri $request.Url -Method $request.Method -Headers $request.Headers -UseBasicParsing -TimeoutSec 25 -MaximumRedirection 0
+        if ([int]$response.StatusCode -ne 200) { throw 'Unexpected HTTP result' }
         return [string]$response.Content
     }
     catch {
-        # HTTP exceptions can contain request metadata or signatures. Suppress details.
-        throw "Anfrage an Discogs '$Endpoint' fehlgeschlagen; pruefe die Anwendung. Details absichtlich unterdrueckt."
+        # Do not print the raw error: SDK messages may reveal Authorization headers.
+        $status = 0
+        if ($null -ne $_.Exception.Response) {
+            try { $status = [int]$_.Exception.Response.StatusCode }
+            catch { $status = 0 }
+        }
+        if ($status -ge 300 -and $status -le 599) {
+            throw ("DISCOGS_OAUTH_" + $Endpoint + "_HTTP_" + $status)
+        }
+        throw ("DISCOGS_OAUTH_" + $Endpoint + "_TRANSPORT")
     }
 }
 function Clear-OwnClipboard([string]$Expected) {
@@ -120,26 +127,38 @@ function Add-EnvironmentSecretViaClipboard([string]$Name, [string]$Secret) {
     finally { Clear-OwnClipboard $Secret }
 }
 function Run-SelfTest {
-    $p = @{
-        oauth_consumer_key = 'test_key_2026'
-        oauth_nonce = 'fixed_nonce_1234'
-        oauth_signature_method = 'HMAC-SHA1'
-        oauth_timestamp = '1470000000'
-        oauth_version = '1.0'
-        oauth_callback = 'oob'
+    $r = New-OfficialDiscogsRequest 'request_token' 'GET' 'synthetic_consumer_key' 'synthetic_consumer_secret'
+    if ($r.Method -cne 'GET' -or $r.Url -cne 'https://api.discogs.com/oauth/request_token' -or
+        $r.Headers.Accept -cne '*/*' -or
+        $r.Headers.Authorization -notmatch 'oauth_signature_method="PLAINTEXT"' -or
+        $r.Headers.Authorization -notmatch 'oauth_callback="oob"' -or
+        $r.Headers.Authorization -notmatch 'oauth_signature="synthetic_consumer_secret%26"') {
+        throw 'Request-token method or signed header regression.'
     }
-    $s = Get-OAuthSignature 'POST' 'https://api.discogs.com/oauth/request_token' $p 'synthetic_consumer_secret' ''
-    if ($s -cne 'sfcCgtyhuqUTw22kIYDOas09YrI=') { throw 'Signaturtest fehlgeschlagen' }
+    $a = New-OfficialDiscogsRequest 'access_token' 'POST' 'synthetic_key' 'consumer+ secret' 'synthetic_token_2026' 'token/secret' 'pin123'
+    if ($a.Method -cne 'POST' -or
+        $a.Headers.Authorization -notmatch 'oauth_verifier="pin123"' -or
+        $a.Headers.Authorization -notmatch 'oauth_signature="consumer%252B%2520secret%26token%252Fsecret"' -or
+        $a.Headers.Authorization.Contains('consumer+ secret') -or
+        $a.Headers.Authorization.Contains('token/secret')) {
+        throw 'Access-token signature, escaping or HTTP method regression.'
+    }
+    $i = New-OfficialDiscogsRequest 'identity' 'GET' 'synthetic_key' 'consumer_secret' 'synthetic_token_2026' 'token_secret'
+    if ($i.Method -cne 'GET' -or $i.Headers.Accept -cne 'application/json') {
+        throw 'Identity request or header regression.'
+    }
+    $denied = $false
+    try { [void](New-OfficialDiscogsRequest 'request_token' 'POST' 'synthetic_key' 'synthetic_secret') }
+    catch { $denied = $true }
+    if (-not $denied) { throw 'Unsupported OAuth HTTP method allowed.' }
     $parsed = Parse-TokenReply 'oauth_token=abcdefgh12345678&oauth_token_secret=abcdefghi9876543&oauth_callback_confirmed=true'
     if ($parsed['oauth_token'] -cne 'abcdefgh12345678' -or $parsed['oauth_token_secret'] -cne 'abcdefghi9876543') {
-        throw 'Token-Parser fehlgeschlagen'
+        throw 'Token response parse regression.'
     }
-    try {
-        [void](Parse-TokenReply 'oauth_token=abcdefgh12345678&oauth_token=duplicate&oauth_token_secret=abcdefghi9876543')
-        throw 'Duplicate token accepted'
-    } catch {
-        if ($_.Exception.Message -eq 'Duplicate token accepted') { throw }
-    }
+    $denied = $false
+    try { [void](Parse-TokenReply 'oauth_token=abcdefgh12345678&oauth_token=duplicate&oauth_token_secret=abcdefghi9876543') }
+    catch { $denied = $true }
+    if (-not $denied) { throw 'Duplicate OAuth response token accepted.' }
     Write-Output 'DISCOGS_LOCAL_OAUTH_BOOTSTRAP_SELFTEST=PASS'
 }
 if ($SelfTest) { Run-SelfTest; return }
@@ -164,7 +183,7 @@ try {
         throw 'Consumer-Key/-Secret fehlt oder hat ein unerwartetes Format.'
     }
     Write-Host 'Fordere einen temporaeren OAuth-Antrag bei Discogs an ...'
-    $tmp = Parse-TokenReply (Invoke-OfficialDiscogs 'request_token' 'POST' $consumerKey $consumerSecret)
+    $tmp = Parse-TokenReply (Invoke-OfficialDiscogs 'request_token' 'GET' $consumerKey $consumerSecret)
     $authUrl = 'https://www.discogs.com/oauth/authorize?oauth_token=' + (Escape-OAuth ([string]$tmp['oauth_token']))
     Write-Host 'Oeffne den Discogs-Autorisierungsdialog in deinem Browser ...'
     Start-Process $authUrl
@@ -188,7 +207,20 @@ try {
 catch {
     # NEVER print exception details: may include sensitive data from infrastructure.
     Write-Host 'Einrichtung nicht abgeschlossen. Keine automatischen GitHub-Aenderungen.' -ForegroundColor Yellow
-    Write-Host 'Pruefe Discogs-App, Browserfreigabe und PIN.'
+    # Only preformatted, regex-validated status codes may be printed.
+    $diagnostic = [string]$_.Exception.Message
+    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT)
+    exit 1
+}
+finally {
+    Remove-Variable consumerKey, consumerSecret, verifier, tmp, access, rawIdentity, identity, authUrl -ErrorAction SilentlyContinue
+}
+) {
+        Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
+    } else {
+        Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_ERROR'
+    }
+    Write-Host 'Bitte nur den Diagnosecode, nie den Token oder Secret-Wert, weitergeben.'
     exit 1
 }
 finally {

@@ -80,23 +80,48 @@ function New-OfficialDiscogsRequest([string]$Endpoint, [string]$Method,
         'User-Agent' = 'MusicMetadataQA-OAuthSetup/1.1 (+https://github.com/lxsdd/dev-infrastructure-public)'
         Accept = $accept
     }
+    if ($Endpoint -ceq 'access_token') {
+        $headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    }
     return @{ Url = $url; Method = $Method; Headers = $headers }
 }
 function Invoke-OfficialDiscogs([string]$Endpoint, [string]$Method,
     [string]$ConsumerKey, [string]$ConsumerSecret,
-    [string]$Token = '', [string]$TokenSecret = '', [string]$Verifier = '') {
-    $request = New-OfficialDiscogsRequest $Endpoint $Method $ConsumerKey $ConsumerSecret $Token $TokenSecret $Verifier
+    [string]$Token = '', [string]$TokenSecret = '', [string]$Verifier = '',
+    [scriptblock]$Transport = $null) {
+    # Request preparation is covered by its own safe diagnostic. Otherwise a
+    # strict-mode property error could escape the HTTP catch and be reported
+    # unhelpfully as LOCAL_BOOTSTRAP_ERROR.
     try {
-        $response = Invoke-WebRequest -Uri $request.Url -Method $request.Method -Headers $request.Headers -UseBasicParsing -TimeoutSec 25 -MaximumRedirection 0
+        $request = New-OfficialDiscogsRequest $Endpoint $Method $ConsumerKey $ConsumerSecret $Token $TokenSecret $Verifier
+    }
+    catch {
+        throw ("DISCOGS_OAUTH_" + $Endpoint + "_PREPARE")
+    }
+    try {
+        if ($null -ne $Transport) {
+            # Offline CI only; no third-party modules or network. Real callers
+            # never set Transport.
+            $response = & $Transport $request
+        } else {
+            $response = Invoke-WebRequest -Uri $request.Url -Method $request.Method `
+                -Headers $request.Headers -UseBasicParsing -TimeoutSec 25 -MaximumRedirection 0 -ErrorAction Stop
+        }
         if ([int]$response.StatusCode -ne 200) { throw 'Unexpected HTTP result' }
         return [string]$response.Content
     }
     catch {
-        # Do not print the raw error: SDK messages may reveal Authorization headers.
+        # StrictMode Latest: many exceptions do NOT expose .Response. Accessing
+        # it directly creates a SECOND error that masks the actual HTTP issue.
+        # Never emit underlying HTTP exception, Authorization, tokens, or URL.
         $status = 0
-        if ($null -ne $_.Exception.Response) {
-            try { $status = [int]$_.Exception.Response.StatusCode }
-            catch { $status = 0 }
+        $failure = $_.Exception
+        $property = $failure.PSObject.Properties['Response']
+        if ($null -ne $property -and $null -ne $property.Value) {
+            try {
+                $statusProperty = $property.Value.PSObject.Properties['StatusCode']
+                if ($null -ne $statusProperty) { $status = [int]$statusProperty.Value }
+            } catch { $status = 0 }
         }
         if ($status -ge 300 -and $status -le 599) {
             throw ("DISCOGS_OAUTH_" + $Endpoint + "_HTTP_" + $status)
@@ -159,6 +184,30 @@ function Run-SelfTest {
     try { [void](Parse-TokenReply 'oauth_token=abcdefgh12345678&oauth_token=duplicate&oauth_token_secret=abcdefghi9876543') }
     catch { $denied = $true }
     if (-not $denied) { throw 'Duplicate OAuth response token accepted.' }
+    # Exercise the complete HTTP wrapper with a synthetic error and a fake
+    # success, so StrictMode/catch bugs cannot evade the real Windows tests.
+    $failureTransport = { param($r) throw [InvalidOperationException]::new('synthetic transport rejection') }
+    $failedSafely = $false
+    try {
+        [void](Invoke-OfficialDiscogs 'request_token' 'GET' 'synthetic_key' 'synthetic_secret' -Transport $failureTransport)
+    } catch {
+        $failedSafely = $_.Exception.Message -ceq 'DISCOGS_OAUTH_request_token_TRANSPORT'
+    }
+    if (-not $failedSafely) { throw 'Synthetic transport error was not safely classified.' }
+    $fakeSuccess = {
+        param($r)
+        if ($r.Url -cne 'https://api.discogs.com/oauth/request_token' -or
+            $r.Headers.Authorization -notmatch 'oauth_signature_method="PLAINTEXT"') {
+            throw 'Unexpected mocked OAuth request.'
+        }
+        return [pscustomobject]@{
+            StatusCode=200
+            Content='oauth_token=abcdefgh12345678&oauth_token_secret=abcdefghi9876543&oauth_callback_confirmed=true'
+        }
+    }
+    $fakeResponse = Invoke-OfficialDiscogs 'request_token' 'GET' 'synthetic_key' 'synthetic_secret' -Transport $fakeSuccess
+    $fakeParsed = Parse-TokenReply $fakeResponse
+    if ($fakeParsed['oauth_token'] -cne 'abcdefgh12345678') { throw 'Mock request/response integration failed.' }
     Write-Output 'DISCOGS_LOCAL_OAUTH_BOOTSTRAP_SELFTEST=PASS'
 }
 if ($SelfTest) { Run-SelfTest; return }
@@ -169,6 +218,7 @@ $consumerSecret = $null
 $verifier = $null
 $tmp = $null
 $access = $null
+$stage = 'STARTUP'
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Write-Host ''
@@ -176,30 +226,48 @@ try {
     Write-Host 'Alle Zugangsdaten bleiben lokal im Prozess. KEINE Token im Terminal oder im Chat.'
     Write-Host 'Halte die Entwicklerseite deiner neuen Discogs-Anwendung bereit.'
     Write-Host ''
+    $stage = 'READ_CONSUMER_KEY'
     $consumerKey = Read-MaskedValue 'Consumer Key der neuen Discogs-Anwendung (verdeckt)'
+    $stage = 'READ_CONSUMER_SECRET'
     $consumerSecret = Read-MaskedValue 'Consumer Secret derselben Anwendung (verdeckt)'
+    $stage = 'VALIDATE_CONSUMER'
     if ($consumerKey -cnotmatch '^[A-Za-z0-9_-]{8,512}$' -or
         $consumerSecret -cnotmatch '^[A-Za-z0-9_-]{8,512}$') {
         throw 'Consumer-Key/-Secret fehlt oder hat ein unerwartetes Format.'
     }
     Write-Host 'Fordere einen temporaeren OAuth-Antrag bei Discogs an ...'
-    $tmp = Parse-TokenReply (Invoke-OfficialDiscogs 'request_token' 'GET' $consumerKey $consumerSecret)
+    $stage = 'REQUEST_TOKEN_SEND'
+    $tokenResponse = Invoke-OfficialDiscogs 'request_token' 'GET' $consumerKey $consumerSecret
+    $stage = 'REQUEST_TOKEN_PARSE'
+    $tmp = Parse-TokenReply $tokenResponse
+    $tokenResponse = $null
     $authUrl = 'https://www.discogs.com/oauth/authorize?oauth_token=' + (Escape-OAuth ([string]$tmp['oauth_token']))
     Write-Host 'Oeffne den Discogs-Autorisierungsdialog in deinem Browser ...'
+    $stage = 'OPEN_AUTH_BROWSER'
     Start-Process $authUrl
     Write-Host 'Pruefe www.discogs.com und den Anwendungsnamen Music Metadata QA.'
     Write-Host 'Bestaetige den Zugriff und gib den angezeigten PIN NUR hier in PowerShell ein.'
+    $stage = 'READ_PIN'
     $verifier = Read-MaskedValue 'Discogs OAuth PIN (verdeckt)'
     if ($verifier -cnotmatch '^[A-Za-z0-9_-]{3,128}$') { throw 'PIN-Format ungueltig.' }
     Write-Host 'Tausche PIN bei Discogs gegen ein OAuth-Access-Paar aus ...'
-    $access = Parse-TokenReply (Invoke-OfficialDiscogs 'access_token' 'POST' $consumerKey $consumerSecret ([string]$tmp['oauth_token']) ([string]$tmp['oauth_token_secret']) $verifier)
+    $stage = 'ACCESS_TOKEN_SEND'
+    $accessResponse = Invoke-OfficialDiscogs 'access_token' 'POST' $consumerKey $consumerSecret ([string]$tmp['oauth_token']) ([string]$tmp['oauth_token_secret']) $verifier
+    $stage = 'ACCESS_TOKEN_PARSE'
+    $access = Parse-TokenReply $accessResponse
+    $accessResponse = $null
+    $stage = 'IDENTITY_REQUEST'
     $rawIdentity = Invoke-OfficialDiscogs 'identity' 'GET' $consumerKey $consumerSecret ([string]$access['oauth_token']) ([string]$access['oauth_token_secret'])
+    $stage = 'IDENTITY_PARSE'
     $identity = $rawIdentity | ConvertFrom-Json
     if ($null -eq $identity -or $null -eq $identity.id) { throw 'Discogs-Identitaetspruefung fehlgeschlagen.' }
     Write-Host 'PASS: Discogs OAuth1 genehmigt und Identitaetsabfrage erfolgreich.'
     Write-Host 'Jetzt beide Werte einzeln in GitHub Environment Secrets uebernehmen.'
+    $stage = 'OPEN_GITHUB'
     Start-Process 'https://github.com/lxsdd/dev-infrastructure-public/settings/environments'
+    $stage = 'SAVE_ACCESS_TOKEN'
     Add-EnvironmentSecretViaClipboard 'DISCOGS_OAUTH_ACCESS_TOKEN' ([string]$access['oauth_token'])
+    $stage = 'SAVE_TOKEN_SECRET'
     Add-EnvironmentSecretViaClipboard 'DISCOGS_OAUTH_TOKEN_SECRET' ([string]$access['oauth_token_secret'])
     Write-Host ''
     Write-Host 'PASS: Lokale Einrichtung abgeschlossen. Fenster kann geschlossen werden.'
@@ -211,7 +279,11 @@ catch {
     if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT)$') {
         Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
     } else {
-        Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_ERROR'
+        if ($stage -cmatch '^(STARTUP|READ_CONSUMER_KEY|READ_CONSUMER_SECRET|VALIDATE_CONSUMER|REQUEST_TOKEN_SEND|REQUEST_TOKEN_PARSE|OPEN_AUTH_BROWSER|READ_PIN|ACCESS_TOKEN_SEND|ACCESS_TOKEN_PARSE|IDENTITY_REQUEST|IDENTITY_PARSE|OPEN_GITHUB|SAVE_ACCESS_TOKEN|SAVE_TOKEN_SECRET)$') {
+            Write-Host ('Sicherer Diagnosecode: LOCAL_BOOTSTRAP_' + $stage)
+        } else {
+            Write-Host 'Sicherer Diagnosecode: LOCAL_BOOTSTRAP_UNKNOWN'
+        }
     }
     Write-Host 'Bitte nur den Diagnosecode, nie den Token oder Secret-Wert, weitergeben.'
     exit 1

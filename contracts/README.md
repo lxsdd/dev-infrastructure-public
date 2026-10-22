@@ -2,7 +2,7 @@
 
 `shared-source-registry.json` is the machine-readable inventory of original,
 public, source-only implementations and all approved public copies. It currently
-tracks **four canonical contracts and eight consumer files** (twelve objects).
+tracks **four canonical contracts and nine consumer files** (thirteen objects).
 
 `scripts/audit_shared_source_drift.py` checks each **current public `main`**
 file by fetching its bytes from `raw.githubusercontent.com` and calculating its

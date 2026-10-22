@@ -63,7 +63,6 @@ def _specified_gate(lines: list[str], label: str, kind: str) -> bool:
     if kind == "job":
         positions = [i for i, line in enumerate(lines)
                      if line == "  " + label + ":"]
-        if kind == "job":
         if len(positions) != 1:
             return False
         for row in lines[positions[0] + 1:]:

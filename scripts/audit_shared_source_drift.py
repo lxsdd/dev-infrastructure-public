@@ -28,7 +28,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def git_blob_sha1(data):
-    prefix = b"blob " + str(len(data)).encode("ascii") + b"\x5c0"
+    prefix = b"blob " + str(len(data)).encode("ascii") + b"\0"
     return hashlib.sha1(prefix + data).hexdigest()
 
 

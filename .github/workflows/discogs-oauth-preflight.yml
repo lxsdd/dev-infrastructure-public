@@ -1,0 +1,39 @@
+name: Discogs central OAuth source preflight (no secrets)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/discogs_oauth_readonly_qa.py'
+      - '.github/workflows/discogs-oauth-live-qa.yml'
+      - '.github/workflows/discogs-oauth-preflight.yml'
+      - 'docs/DISCOGS-CENTRAL-OAUTH-QA.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-no-secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 -m py_compile scripts/discogs_oauth_readonly_qa.py
+      - run: python3 scripts/discogs_oauth_readonly_qa.py --selftest
+      - name: Reject accidental workflow authorization on PR or push
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('.github/workflows/discogs-oauth-live-qa.yml').read_text()
+          assert 'workflow_dispatch:' in s
+          assert '\n  pull_request:' not in s and '\n  push:' not in s and '\n  workflow_call:' not in s
+          assert 'environment: discogs-live-qa' in s
+          assert "github.ref == 'refs/heads/main'" in s
+          assert 'upload-artifact' not in s
+          assert 'pull_request.head' not in s
+          print('DISCOGS_CENTRAL_SECRET_BOUNDARY=PASS')
+          PY

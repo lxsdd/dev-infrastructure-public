@@ -1,0 +1,40 @@
+name: Discogs central OAuth live QA (manual only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discogs-central-oauth-manual-qa
+  cancel-in-progress: false
+
+jobs:
+  authorized-readonly:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'lxsdd/dev-infrastructure-public' &&
+      github.ref == 'refs/heads/main'
+    name: Protected OAuth1 identity and five public release regressions
+    runs-on: ubuntu-latest
+    environment: discogs-live-qa
+    timeout-minutes: 8
+    steps:
+      - name: Checkout only the reviewed central branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate OAuth signature logic without secrets
+        run: python3 scripts/discogs_oauth_readonly_qa.py --selftest
+      - name: Official Discogs OAuth1 read-only live acceptance
+        shell: bash
+        env:
+          DISCOGS_OAUTH_CONSUMER_KEY: ${{ secrets.DISCOGS_OAUTH_CONSUMER_KEY }}
+          DISCOGS_OAUTH_CONSUMER_SECRET: ${{ secrets.DISCOGS_OAUTH_CONSUMER_SECRET }}
+          DISCOGS_OAUTH_ACCESS_TOKEN: ${{ secrets.DISCOGS_OAUTH_ACCESS_TOKEN }}
+          DISCOGS_OAUTH_TOKEN_SECRET: ${{ secrets.DISCOGS_OAUTH_TOKEN_SECRET }}
+        run: |
+          set -euo pipefail
+          python3 scripts/discogs_oauth_readonly_qa.py
+      # No PR checkout, third-party build or uploaded artifacts.

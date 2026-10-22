@@ -27,8 +27,8 @@ jobs:
           [void][System.Management.Automation.Language.Parser]::ParseFile(
             (Join-Path (Get-Location) 'scripts/discogs-oauth-local-bootstrap.ps1'),
             [ref]$t,[ref]$e)
-          if($e.Count){throw "PowerShell syntax errors: $($e.Count)"}
-      - name: 'Windows PowerShell 5.1: RFC3986 and HMAC-SHA1 signature/response tests'
+          if($e.Count){foreach($err in $e){Write-Host ("Parser: line="+$err.Extent.StartLineNumber+" id="+$err.ErrorId+" text="+$err.Message)}; throw "PowerShell syntax errors: $($e.Count)"}
+      - name: 'Windows PowerShell 5.1: RFC3986 and PLAINTEXT signature/response tests'
         shell: powershell
         run: ./scripts/discogs-oauth-local-bootstrap.ps1 -SelfTest
       - name: 'PowerShell 7: independent engine sanity'

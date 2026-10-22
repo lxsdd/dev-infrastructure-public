@@ -25,3 +25,4 @@ jobs:
           test -s PUBLIC_SCOPE.md
           python3 tests/check_fixture.py
           python3 tests/check_ci_dispatch.py
+          python3 tests/check_publication_guard.py

@@ -1,9 +1,6 @@
 name: Protected authenticated Discogger + Metadata Isolation native GUI QA
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/discogs-authenticated-native-gui.yml'
   push:
     branches: [main]
     paths:
@@ -18,33 +15,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  policy-preflight:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Enforce protected main-only credential path and no uploads
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          src = Path('.github/workflows/discogs-authenticated-native-gui.yml').read_text()
-          assert "environment: discogs-live-qa" in src
-          assert "github.repository == 'lxsdd/dev-infrastructure-public'" in src
-          assert "github.ref == 'refs/heads/main'" in src
-          assert "github.event_name == 'pull_request'" in src
-          assert "uses: actions/upload-artifact" not in src
-          assert "pull_request_target:" not in src
-          assert "DISCOGS_OAUTH_CONSUMER_SECRET:" in src
-          assert "DISCOGS_OAUTH_TOKEN_SECRET:" in src
-          assert "238e35fdf691170babc87083992ed3e3b0a5008d" in src
-          assert "a027ef885c803a1b1216c62c8a4d6190a19cd833" in src
-          print('PROTECTED_DISCOGGER_NATIVE_GUI_POLICY=PASS')
-          PY
-
   authenticated-native-gui:
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&

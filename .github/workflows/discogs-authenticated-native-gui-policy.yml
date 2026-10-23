@@ -33,7 +33,7 @@ jobs:
           assert "pull_request_target:" not in src
           assert "DISCOGS_OAUTH_CONSUMER_SECRET:" in src
           assert "DISCOGS_OAUTH_TOKEN_SECRET:" in src
-          assert "66ce53d1cc958a780cc2e84247a7e97b7f74290d" in src
+          assert "955cb441a911198be523ae71a9146dfb085d743b" in src
           assert "a027ef885c803a1b1216c62c8a4d6190a19cd833" in src
           assert src.count("secrets.DISCOGS_OAUTH_CONSUMER_KEY") == 2
           assert src.count("secrets.DISCOGS_OAUTH_CONSUMER_SECRET") == 2
@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: lxsdd/foo_discogger
-          ref: 66ce53d1cc958a780cc2e84247a7e97b7f74290d
+          ref: 955cb441a911198be523ae71a9146dfb085d743b
           persist-credentials: false
       - name: Checkout pinned foobar SDK template
         uses: actions/checkout@v4
@@ -88,7 +88,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          if((& git rev-parse HEAD).Trim() -cne '66ce53d1cc958a780cc2e84247a7e97b7f74290d'){throw 'Reviewed source SHA mismatch'}
+          if((& git rev-parse HEAD).Trim() -cne '955cb441a911198be523ae71a9146dfb085d743b'){throw 'Reviewed source SHA mismatch'}
           & python tests/source_contracts.py
           if($LASTEXITCODE -ne 0){throw 'Runner-only OAuth source contract failed'}
       - name: Build actual Win32/x64 Discogger with test-only OAuth path

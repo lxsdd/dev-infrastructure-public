@@ -93,4 +93,33 @@ jobs:
             if(-not (Test-Path -LiteralPath $dll -PathType Leaf)){throw "QA DLL missing for $arch"}
           }
           Write-Host 'PROTECTED_DISCOGGER_GUI_NATIVE_BUILD_PREFLIGHT=PASS'
+      - name: Stage pinned copyright-free GUI fixture generator
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/dev-infrastructure-public
+          ref: 35369054c56f4c6ccb2f802944e9675852fd35ec
+          path: external/discogger-rich-fixtures
+          persist-credentials: false
+      - name: Confirm original Win32 foobar host and immutable installer
+        uses: lxsdd/dev-infrastructure-public/.github/actions/foobar-host-smoke@35369054c56f4c6ccb2f802944e9675852fd35ec
+        with:
+          architecture: Win32
+          component-dll: ${{ runner.temp }}/discogger-sdk-probe/foobar2000/foo_discogger/Win32/Release/foo_discogger.dll
+      - name: Confirm original x64 foobar host and immutable installer
+        uses: lxsdd/dev-infrastructure-public/.github/actions/foobar-host-smoke@35369054c56f4c6ccb2f802944e9675852fd35ec
+        with:
+          architecture: x64
+          component-dll: ${{ runner.temp }}/discogger-sdk-probe/foobar2000/foo_discogger/x64/Release/foo_discogger.dll
+      - name: Execute real Win32 uncredentialed native Discogger GUI and physical safeguards
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/host-discogger-gui.ps1 -Architecture Win32 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/Win32/Release/foo_discogger.dll"
+          if($LASTEXITCODE -ne 0){throw 'Win32 secret-free native GUI regression'}
+      - name: Execute real x64 uncredentialed native Discogger GUI and physical safeguards
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/host-discogger-gui.ps1 -Architecture x64 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/x64/Release/foo_discogger.dll"
+          if($LASTEXITCODE -ne 0){throw 'x64 secret-free native GUI regression'}
       # Runner-only DLLs are discarded with the VM. No upload or secrets.

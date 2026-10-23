@@ -37,15 +37,15 @@ function global:Invoke-WebRequest {
     $script:QACalls.Add($Method + ' ' + $Uri)
     if ($Uri.EndsWith('/request_token')) {
         if ($Method -cne 'GET') {throw 'Wrong request-token method'}
-        return [pscustomobject]@{StatusCode=200;Content='oauth_token=tempToken12345&oauth_token_secret=tempSecret12345&oauth_callback_confirmed=true'}
+        return [pscustomobject]@{StatusCode=200;Content=[Text.Encoding]::UTF8.GetBytes('oauth_token=tempToken12345&oauth_token_secret=tempSecret12345&oauth_callback_confirmed=true')}
     }
     if ($Uri.EndsWith('/access_token')) {
         if ($Method -cne 'POST' -or
             $Headers.Authorization -notmatch 'oauth_verifier="pin2026"') {throw 'Wrong access-token request'}
-        return [pscustomobject]@{StatusCode=200;Content='oauth_token=accessToken12345&oauth_token_secret=accessSecret12345'}
+        return [pscustomobject]@{StatusCode=200;Content=[Text.Encoding]::UTF8.GetBytes('oauth_token=accessToken12345&oauth_token_secret=accessSecret12345')}
     }
     if ($Method -cne 'GET') {throw 'Wrong identity request'}
-    return [pscustomobject]@{StatusCode=200;Content='{"id":1234567}'}
+    return [pscustomobject]@{StatusCode=200;Content=[Text.Encoding]::UTF8.GetBytes('{"id":1234567}')}
 }
 function global:Start-Process {
     [CmdletBinding()]

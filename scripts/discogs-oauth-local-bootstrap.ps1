@@ -131,13 +131,21 @@ function Invoke-OfficialDiscogs([string]$Endpoint, [string]$Method,
                 -Headers $request.Headers -UseBasicParsing -TimeoutSec 25 -MaximumRedirection 0 -ErrorAction Stop
         }
         if ([int]$response.StatusCode -ne 200) { throw 'Unexpected HTTP result' }
-        return [string]$response.Content
+        # WinPS 5.1 can return Content as byte[] for form-urlencoded responses.
+        # [string]byte[] formats numbers, rather than decoding the HTTP body.
+        $body = $response.Content
+        if ($body -is [byte[]]) {
+            return [Text.Encoding]::UTF8.GetString([byte[]]$body)
+        }
+        if ($body -is [string]) { return $body }
+        throw 'UNEXPECTED_OAUTH_CONTENT_OBJECT'
     }
     catch {
         # StrictMode Latest: many exceptions do NOT expose .Response. Accessing
         # it directly creates a SECOND error that masks the actual HTTP issue.
         # Never emit underlying HTTP exception, Authorization, tokens, or URL.
         $status = 0
+        $unexpectedBodyType = $_.Exception.Message -ceq 'UNEXPECTED_OAUTH_CONTENT_OBJECT'
         $failure = $_.Exception
         $property = $failure.PSObject.Properties['Response']
         if ($null -ne $property -and $null -ne $property.Value) {
@@ -148,6 +156,9 @@ function Invoke-OfficialDiscogs([string]$Endpoint, [string]$Method,
         }
         if ($status -ge 300 -and $status -le 599) {
             throw ("DISCOGS_OAUTH_" + $Endpoint + "_HTTP_" + $status)
+        }
+        if ($unexpectedBodyType) {
+            throw ("DISCOGS_OAUTH_" + $Endpoint + "_BODY_TYPE")
         }
         throw ("DISCOGS_OAUTH_" + $Endpoint + "_TRANSPORT")
     }
@@ -326,7 +337,7 @@ catch {
     # Only allow-listed symbolic codes: never print raw exceptions or API bodies.
     Write-Host 'Einrichtung nicht abgeschlossen. Keine automatischen GitHub-Aenderungen.' -ForegroundColor Yellow
     $diagnostic = [string]$_.Exception.Message
-    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT|PREPARE)$' -or
+    if ($diagnostic -cmatch '^DISCOGS_OAUTH_(request_token|access_token|identity)_(HTTP_[3-5][0-9]{2}|TRANSPORT|PREPARE|BODY_TYPE)$' -or
         $diagnostic -cmatch '^DISCOGS_OAUTH_TOKEN_PARSE_(EMPTY|TOO_LARGE|NOT_FORM|FORM|MISSING_FIELD|INVALID_VALUE|CALLBACK)$') {
         Write-Host ('Sicherer Diagnosecode: ' + $diagnostic)
     }

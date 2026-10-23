@@ -45,7 +45,7 @@ jobs:
   native-discogger-build-preflight:
     needs: policy-preflight
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 65
     steps:
       - name: Checkout exact test-only Discogger source
         uses: actions/checkout@v4
@@ -59,6 +59,20 @@ jobs:
           repository: lxsdd/foobar2000_component_template
           ref: 31a35947a7527826c2199491692802e3ce3d8bd7
           path: external/sdk-template
+          persist-credentials: false
+      - name: Checkout exact Metadata Isolation companion source
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foo_metadata_isolation-public
+          ref: a027ef885c803a1b1216c62c8a4d6190a19cd833
+          path: external/metadata-isolation
+          persist-credentials: false
+      - name: Checkout pinned SDK template for Metadata Isolation
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foobar2000_component_template
+          ref: 31a35947a7527826c2199491692802e3ce3d8bd7
+          path: external/metadata-isolation/external/sdk-template
           persist-credentials: false
       - name: Locate runner-installed Visual Studio MSBuild without third-party setup action
         shell: pwsh
@@ -93,6 +107,30 @@ jobs:
             if(-not (Test-Path -LiteralPath $dll -PathType Leaf)){throw "QA DLL missing for $arch"}
           }
           Write-Host 'PROTECTED_DISCOGGER_GUI_NATIVE_BUILD_PREFLIGHT=PASS'
+      - name: Build exact Metadata Isolation Win32/x64 companion without credentials
+        shell: pwsh
+        working-directory: external/metadata-isolation
+        run: |
+          $ErrorActionPreference='Stop'
+          if((& git rev-parse HEAD).Trim() -cne 'a027ef885c803a1b1216c62c8a4d6190a19cd833'){throw 'Metadata Isolation source drift'}
+          & python scripts/verify-public-artifact-hold.py
+          if($LASTEXITCODE -ne 0){throw 'Metadata Isolation public artifact gate regression'}
+          $centralWorkspace=$env:GITHUB_WORKSPACE
+          try {
+            $env:GITHUB_WORKSPACE=(Resolve-Path '.').Path
+            ./ci/test-latest-sdk.ps1
+          } finally {
+            $env:GITHUB_WORKSPACE=$centralWorkspace
+          }
+          ./validate_project.ps1
+          $wtl=Join-Path (Get-Location) 'wtl/Include'
+          if(-not (Test-Path -LiteralPath (Join-Path $wtl 'atlapp.h'))){throw 'WTL header absent'}
+          $env:CL='/I"' + $wtl + '" ' + $env:CL
+          foreach($arch in @('Win32','x64')){
+            & msbuild component.sln /t:Build /p:Configuration=Release /p:Platform=$arch /p:EnableTestProbes=true /p:PlatformToolset=v143 /p:LanguageStandard=stdcpp23 /m:2 /verbosity:minimal
+            if($LASTEXITCODE -ne 0){throw "Metadata Isolation QA companion build failed for $arch"}
+          }
+          Write-Host 'PROTECTED_NATIVE_GUI_METADATA_ISOLATION_PREFLIGHT=PASS'
       - name: Stage pinned copyright-free GUI fixture generator
         uses: actions/checkout@v4
         with:
@@ -114,12 +152,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          ./scripts/host-discogger-gui.ps1 -Architecture Win32 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/Win32/Release/foo_discogger.dll"
+          ./scripts/host-discogger-gui.ps1 -Architecture Win32 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/Win32/Release/foo_discogger.dll" -CompanionMetadataIsolationDll "external/metadata-isolation/build/foo_metadata_isolation.dll"
           if($LASTEXITCODE -ne 0){throw 'Win32 secret-free native GUI regression'}
       - name: Execute real x64 uncredentialed native Discogger GUI and physical safeguards
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          ./scripts/host-discogger-gui.ps1 -Architecture x64 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/x64/Release/foo_discogger.dll"
+          ./scripts/host-discogger-gui.ps1 -Architecture x64 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/x64/Release/foo_discogger.dll" -CompanionMetadataIsolationDll "external/metadata-isolation/build/x64/foo_metadata_isolation.dll"
           if($LASTEXITCODE -ne 0){throw 'x64 secret-free native GUI regression'}
       # Runner-only DLLs are discarded with the VM. No upload or secrets.

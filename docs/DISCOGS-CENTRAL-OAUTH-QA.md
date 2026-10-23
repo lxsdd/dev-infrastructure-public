@@ -25,3 +25,12 @@ Repo-local CI must not receive central credentials. A reusable `workflow_call` i
 ## OAuth1 signature compatibility
 
 The original manual Windows bootstrap failed before the PIN stage. The local helper and central read-only QA now use Discogs-compatible OAuth1 **PLAINTEXT** signatures over verified **HTTPS only**, not HMAC-SHA1. This method includes secret components inside the TLS-protected Authorization header, so headers, HTTP exceptions and full responses must never be printed. The local CLI reports only the endpoint and safe status-code diagnostic. The original helper also had a PowerShell inline-hashtable conditional that could fail at runtime; offline tests now construct request headers in Windows PowerShell 5.1 and 7.
+
+
+## Automated Discogs OAuth1 evidence across projects — 2026-10-23
+
+Central read-only OAuth1 API QA runs every day at 04:37 UTC from protected main (and remains manually dispatchable). All four OAuth1 credentials stay exclusively inside the `discogs-live-qa` Environment; no downstream repository receives or inherits them. GitHub may delay scheduled runs and may disable public repo schedules after 60 days of inactivity. The consuming checks reject stale evidence (72 hours by default) and more recent failures.
+
+The secret-free reusable workflow `.github/workflows/discogs-oauth-evidence.yml` is intended for `lxsdd/foo_discogger`, `lxsdd/music-metadata-studio` and `lxsdd/foo_metadata_isolation`. Consumers pin it to an exact immutable commit. It runs the pinned public verifier at source commit `85c38656dbcdf7a93d640b174f39bddfaedaa29c` and reads only public GitHub Actions run/job metadata from the fixed central repository. It verifies workflow ID 393372974, the central repo, workflow path, `main`, permitted event (`workflow_dispatch` or `schedule`), completion, latest success, freshness, and successful OAuth selftest + live API job steps. No caller PR source is executed; it does not use `pull_request_target` or any cross-repository token.
+
+The last accepted central live run must prove Discogs OAuth identity and five direct release API queries; four structured searches were exact and the fifth (`37332711`, Kyau & Albert x Maywave) required a collaborator fallback and identity review. This is **not a native Discogger GUI or foobar2000 tagging/cue write gate**. Each component retains its own synthetic media, GUI and write-safety checks. Never copy OAuth secrets into consumer repositories. [First validated live run 39920726555](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/39920726555).

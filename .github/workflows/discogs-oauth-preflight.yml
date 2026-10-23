@@ -8,6 +8,8 @@ on:
       - '.github/workflows/discogs-oauth-live-qa.yml'
       - '.github/workflows/discogs-oauth-preflight.yml'
       - 'docs/DISCOGS-CENTRAL-OAUTH-QA.md'
+      - 'scripts/discogs_oauth_public_evidence.py'
+      - '.github/workflows/discogs-oauth-evidence.yml'
   workflow_dispatch:
 
 permissions:
@@ -23,17 +25,27 @@ jobs:
           persist-credentials: false
       - run: python3 -m py_compile scripts/discogs_oauth_readonly_qa.py
       - run: python3 scripts/discogs_oauth_readonly_qa.py --selftest
+      - run: python3 scripts/discogs_oauth_public_evidence.py --selftest
+      - run: python3 scripts/discogs_oauth_public_evidence.py --max-age-hours 72
       - name: Reject accidental workflow authorization on PR or push
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           s=Path('.github/workflows/discogs-oauth-live-qa.yml').read_text()
-          assert 'workflow_dispatch:' in s
+          assert 'workflow_dispatch:' in s and '  schedule:' in s
+          assert "- cron: '37 4 * * *'" in s
+          assert "github.event_name == 'schedule'" in s
           assert '\n  pull_request:' not in s and '\n  push:' not in s and '\n  workflow_call:' not in s
           assert 'environment: discogs-live-qa' in s
           assert "github.ref == 'refs/heads/main'" in s
           assert 'upload-artifact' not in s
           assert 'pull_request.head' not in s
+          e=Path('.github/workflows/discogs-oauth-evidence.yml').read_text()
+          assert '  workflow_call:' in e and 'environment: discogs-live-qa' not in e
+          assert 'DISCOGS_OAUTH_ACCESS_TOKEN' not in e
+          assert 'secrets.' not in e
+          assert 'workflow_dispatch:' not in e
+          assert '85c38656dbcdf7a93d640b174f39bddfaedaa29c' in e
           print('DISCOGS_CENTRAL_SECRET_BOUNDARY=PASS')
           PY

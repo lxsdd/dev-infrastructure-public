@@ -1,0 +1,41 @@
+name: Central Discogs OAuth evidence (secret-free reusable)
+
+on:
+  workflow_call:
+    inputs:
+      max-age-hours:
+        description: "Maximum age of latest completed central OAuth live PASS (6 to 168)"
+        required: false
+        type: number
+        default: 72
+
+permissions:
+  contents: read
+
+jobs:
+  central-discogs-api:
+    name: Verify protected central Discogs OAuth1 API live proof
+    if: >-
+      github.repository == 'lxsdd/foo_discogger' ||
+      github.repository == 'lxsdd/music-metadata-studio' ||
+      github.repository == 'lxsdd/foo_metadata_isolation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download immutable reviewed public verifier, never caller PR code
+        env:
+          SOURCE: https://raw.githubusercontent.com/lxsdd/dev-infrastructure-public/85c38656dbcdf7a93d640b174f39bddfaedaa29c/scripts/discogs_oauth_public_evidence.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --retry 2 --max-time 35 "$SOURCE" -o "$RUNNER_TEMP/discogs_oauth_public_evidence.py"
+          python3 "$RUNNER_TEMP/discogs_oauth_public_evidence.py" --selftest
+      - name: Verify latest actual central OAuth1 API live QA success
+        shell: bash
+        env:
+          MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/discogs_oauth_public_evidence.py" --max-age-hours "$MAX_AGE_HOURS"
+      # No checkout of caller, no Discogs credentials, no PR code, writes or artifacts.
+      # Native Discogger GUI/tag-writing acceptance remains independent.

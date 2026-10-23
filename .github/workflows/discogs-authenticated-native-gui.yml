@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: lxsdd/foo_discogger
-          ref: 30c5b28ae08b45aa771247eaed12e5c71cf93569
+          ref: 7f9da687fce13249bc6c4bce102cadc3178a0a68
           path: discogger
           persist-credentials: false
       - name: Checkout immutable Metadata Isolation candidate
@@ -77,7 +77,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          if((& git -C discogger rev-parse HEAD).Trim() -cne '30c5b28ae08b45aa771247eaed12e5c71cf93569'){throw 'Discogger source drift'}
+          if((& git -C discogger rev-parse HEAD).Trim() -cne '7f9da687fce13249bc6c4bce102cadc3178a0a68'){throw 'Discogger source drift'}
           if((& git -C metadata rev-parse HEAD).Trim() -cne 'a027ef885c803a1b1216c62c8a4d6190a19cd833'){throw 'Metadata Isolation source drift'}
           & python discogger/tests/source_contracts.py
           if($LASTEXITCODE -ne 0){throw 'Discogger protected runner gate regression'}

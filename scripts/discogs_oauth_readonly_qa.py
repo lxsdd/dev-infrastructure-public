@@ -94,7 +94,7 @@ def request(path, credentials):
 
 def live():
     if (os.environ.get("GITHUB_ACTIONS") != "true" or
-            os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or
+            os.environ.get("GITHUB_EVENT_NAME") not in ("workflow_dispatch", "schedule") or
             os.environ.get("GITHUB_REPOSITORY") != "lxsdd/dev-infrastructure-public" or
             os.environ.get("GITHUB_REF") != "refs/heads/main"):
         raise RuntimeError("Not running in the reviewed central security context")

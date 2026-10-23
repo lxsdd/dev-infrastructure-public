@@ -1,19 +1,21 @@
-name: Discogs central OAuth live QA (manual only)
+name: Discogs central OAuth live QA (scheduled and manual)
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * *'
 
 permissions:
   contents: read
 
 concurrency:
-  group: discogs-central-oauth-manual-qa
+  group: discogs-central-oauth-secure-main-only
   cancel-in-progress: false
 
 jobs:
   authorized-readonly:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') &&
       github.repository == 'lxsdd/dev-infrastructure-public' &&
       github.ref == 'refs/heads/main'
     name: Protected OAuth1 identity and five public release regressions

@@ -7,6 +7,7 @@ on:
       - 'scripts/discogs_oauth_readonly_qa.py'
       - '.github/workflows/discogs-oauth-live-qa.yml'
       - '.github/workflows/discogs-oauth-preflight.yml'
+      - '.github/workflows/discogs-oauth-evidence.yml'
       - 'docs/DISCOGS-CENTRAL-OAUTH-QA.md'
   workflow_dispatch:
 
@@ -29,7 +30,11 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s=Path('.github/workflows/discogs-oauth-live-qa.yml').read_text()
-          assert 'workflow_dispatch:' in s
+          assert 'workflow_dispatch:' in s and 'schedule:' in s
+          assert "- cron: '17 5 * * *'" in s
+          assert "github.event_name == 'schedule'" in s
+          p=Path('scripts/discogs_oauth_readonly_qa.py').read_text()
+          assert 'in ("workflow_dispatch", "schedule")' in p
           assert '\n  pull_request:' not in s and '\n  push:' not in s and '\n  workflow_call:' not in s
           assert 'environment: discogs-live-qa' in s
           assert "github.ref == 'refs/heads/main'" in s

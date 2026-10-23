@@ -41,3 +41,47 @@ jobs:
           assert src.count("secrets.DISCOGS_OAUTH_TOKEN_SECRET") == 2
           print('PROTECTED_DISCOGGER_NATIVE_GUI_POLICY=PASS')
           PY
+
+  native-discogger-build-preflight:
+    needs: policy-preflight
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact test-only Discogger source
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foo_discogger
+          ref: 238e35fdf691170babc87083992ed3e3b0a5008d
+          persist-credentials: false
+      - name: Checkout pinned foobar SDK template
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foobar2000_component_template
+          ref: 31a35947a7527826c2199491692802e3ce3d8bd7
+          path: external/sdk-template
+          persist-credentials: false
+      - uses: microsoft/setup-msbuild@v2
+      - name: Check test-only auth gates without credentials
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((& git rev-parse HEAD).Trim() -cne '238e35fdf691170babc87083992ed3e3b0a5008d'){throw 'Reviewed source SHA mismatch'}
+          & python tests/source_contracts.py
+          if($LASTEXITCODE -ne 0){throw 'Runner-only OAuth source contract failed'}
+      - name: Build actual Win32/x64 Discogger with test-only OAuth path
+        shell: pwsh
+        env:
+          CL: /DDISCOGGER_RUNNER_MEDIA_QA
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/probe-official-sdk.ps1
+          ./scripts/build-official-sdk-libs.ps1
+          ./scripts/diagnose-component-compile.ps1 -StageOnly
+          ./scripts/build-component-dll.ps1
+          if($LASTEXITCODE -ne 0){throw 'Win32/x64 native Discogger QA build failed'}
+          foreach($arch in @('Win32','x64')){
+            $dll=Join-Path $env:RUNNER_TEMP "discogger-sdk-probe/foobar2000/foo_discogger/$arch/Release/foo_discogger.dll"
+            if(-not (Test-Path -LiteralPath $dll -PathType Leaf)){throw "QA DLL missing for $arch"}
+          }
+          Write-Host 'PROTECTED_DISCOGGER_GUI_NATIVE_BUILD_PREFLIGHT=PASS'
+      # Runner-only DLLs are discarded with the VM. No upload or secrets.

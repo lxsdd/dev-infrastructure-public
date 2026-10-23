@@ -1,0 +1,163 @@
+name: Discogger protected GUI workflow policy (no secrets)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/discogs-authenticated-native-gui.yml'
+      - '.github/workflows/discogs-authenticated-native-gui-policy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  policy-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Enforce protected main-only credential path and no uploads
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/discogs-authenticated-native-gui.yml').read_text()
+          trigger = src.split('jobs:', 1)[0]
+          assert '  pull_request:' not in trigger
+          assert "environment: discogs-live-qa" in src
+          assert "github.repository == 'lxsdd/dev-infrastructure-public'" in src
+          assert "github.ref == 'refs/heads/main'" in src
+          assert "github.event_name == 'push'" in src
+          assert "uses: actions/upload-artifact" not in src
+          assert "pull_request_target:" not in src
+          assert "DISCOGS_OAUTH_CONSUMER_SECRET:" in src
+          assert "DISCOGS_OAUTH_TOKEN_SECRET:" in src
+          assert "be799d8c00b77ebd1a6c8ff390a82074195402a2" in src
+          assert "a027ef885c803a1b1216c62c8a4d6190a19cd833" in src
+          assert src.count("secrets.DISCOGS_OAUTH_CONSUMER_KEY") == 2
+          assert src.count("secrets.DISCOGS_OAUTH_CONSUMER_SECRET") == 2
+          assert src.count("secrets.DISCOGS_OAUTH_ACCESS_TOKEN") == 2
+          assert src.count("secrets.DISCOGS_OAUTH_TOKEN_SECRET") == 2
+          print('PROTECTED_DISCOGGER_NATIVE_GUI_POLICY=PASS')
+          PY
+
+  native-discogger-build-preflight:
+    needs: policy-preflight
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - name: Checkout exact test-only Discogger source
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foo_discogger
+          ref: be799d8c00b77ebd1a6c8ff390a82074195402a2
+          persist-credentials: false
+      - name: Checkout pinned foobar SDK template
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foobar2000_component_template
+          ref: 31a35947a7527826c2199491692802e3ce3d8bd7
+          path: external/sdk-template
+          persist-credentials: false
+      - name: Checkout exact Metadata Isolation companion source
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foo_metadata_isolation-public
+          ref: a027ef885c803a1b1216c62c8a4d6190a19cd833
+          path: external/metadata-isolation
+          persist-credentials: false
+      - name: Checkout pinned SDK template for Metadata Isolation
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/foobar2000_component_template
+          ref: 31a35947a7527826c2199491692802e3ce3d8bd7
+          path: external/metadata-isolation/external/sdk-template
+          persist-credentials: false
+      - name: Locate runner-installed Visual Studio MSBuild without third-party setup action
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if(-not (Test-Path -LiteralPath $vswhere)){throw 'VSWhere unavailable on Windows runner'}
+          $msbuild=@(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe')
+          if($msbuild.Count -ne 1 -or -not (Test-Path -LiteralPath $msbuild[0])){throw 'MSBuild v143 toolset unavailable'}
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $msbuild[0])
+          Write-Host 'PROTECTED_NATIVE_GUI_MSBUILD_FOUND=PASS'
+      - name: Check test-only auth gates without credentials
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if((& git rev-parse HEAD).Trim() -cne 'be799d8c00b77ebd1a6c8ff390a82074195402a2'){throw 'Reviewed source SHA mismatch'}
+          & python tests/source_contracts.py
+          if($LASTEXITCODE -ne 0){throw 'Runner-only OAuth source contract failed'}
+      - name: Build actual Win32/x64 Discogger with test-only OAuth path
+        shell: pwsh
+        env:
+          CL: /DDISCOGGER_RUNNER_MEDIA_QA
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/probe-official-sdk.ps1
+          ./scripts/build-official-sdk-libs.ps1
+          ./scripts/diagnose-component-compile.ps1 -StageOnly
+          ./scripts/build-component-dll.ps1
+          if($LASTEXITCODE -ne 0){throw 'Win32/x64 native Discogger QA build failed'}
+          foreach($arch in @('Win32','x64')){
+            $dll=Join-Path $env:RUNNER_TEMP "discogger-sdk-probe/foobar2000/foo_discogger/$arch/Release/foo_discogger.dll"
+            if(-not (Test-Path -LiteralPath $dll -PathType Leaf)){throw "QA DLL missing for $arch"}
+          }
+          Write-Host 'PROTECTED_DISCOGGER_GUI_NATIVE_BUILD_PREFLIGHT=PASS'
+      - name: Build exact Metadata Isolation Win32/x64 companion without credentials
+        shell: pwsh
+        working-directory: external/metadata-isolation
+        run: |
+          $ErrorActionPreference='Stop'
+          if((& git rev-parse HEAD).Trim() -cne 'a027ef885c803a1b1216c62c8a4d6190a19cd833'){throw 'Metadata Isolation source drift'}
+          & python scripts/verify-public-artifact-hold.py
+          if($LASTEXITCODE -ne 0){throw 'Metadata Isolation public artifact gate regression'}
+          $centralWorkspace=$env:GITHUB_WORKSPACE
+          try {
+            $env:GITHUB_WORKSPACE=(Resolve-Path '.').Path
+            ./ci/test-latest-sdk.ps1
+          } finally {
+            $env:GITHUB_WORKSPACE=$centralWorkspace
+          }
+          ./validate_project.ps1
+          $wtl=Join-Path (Get-Location) 'wtl/Include'
+          if(-not (Test-Path -LiteralPath (Join-Path $wtl 'atlapp.h'))){throw 'WTL header absent'}
+          $env:CL='/I"' + $wtl + '" ' + $env:CL
+          foreach($arch in @('Win32','x64')){
+            & msbuild component.sln /t:Build /p:Configuration=Release /p:Platform=$arch /p:EnableTestProbes=true /p:PlatformToolset=v143 /p:LanguageStandard=stdcpp23 /m:2 /verbosity:minimal
+            if($LASTEXITCODE -ne 0){throw "Metadata Isolation QA companion build failed for $arch"}
+          }
+          Write-Host 'PROTECTED_NATIVE_GUI_METADATA_ISOLATION_PREFLIGHT=PASS'
+      - name: Stage pinned copyright-free GUI fixture generator
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/dev-infrastructure-public
+          ref: 35369054c56f4c6ccb2f802944e9675852fd35ec
+          path: external/discogger-rich-fixtures
+          persist-credentials: false
+      - name: Confirm original Win32 foobar host and immutable installer
+        uses: lxsdd/dev-infrastructure-public/.github/actions/foobar-host-smoke@35369054c56f4c6ccb2f802944e9675852fd35ec
+        with:
+          architecture: Win32
+          component-dll: ${{ runner.temp }}/discogger-sdk-probe/foobar2000/foo_discogger/Win32/Release/foo_discogger.dll
+      - name: Confirm original x64 foobar host and immutable installer
+        uses: lxsdd/dev-infrastructure-public/.github/actions/foobar-host-smoke@35369054c56f4c6ccb2f802944e9675852fd35ec
+        with:
+          architecture: x64
+          component-dll: ${{ runner.temp }}/discogger-sdk-probe/foobar2000/foo_discogger/x64/Release/foo_discogger.dll
+      - name: Execute real Win32 uncredentialed native Discogger GUI and physical safeguards
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/host-discogger-gui.ps1 -Architecture Win32 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/Win32/Release/foo_discogger.dll" -CompanionMetadataIsolationDll "external/metadata-isolation/build/foo_metadata_isolation.dll"
+          if($LASTEXITCODE -ne 0){throw 'Win32 secret-free native GUI regression'}
+      - name: Execute real x64 uncredentialed native Discogger GUI and physical safeguards
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/host-discogger-gui.ps1 -Architecture x64 -ComponentDll "$env:RUNNER_TEMP/discogger-sdk-probe/foobar2000/foo_discogger/x64/Release/foo_discogger.dll" -CompanionMetadataIsolationDll "external/metadata-isolation/build/x64/foo_metadata_isolation.dll"
+          if($LASTEXITCODE -ne 0){throw 'x64 secret-free native GUI regression'}
+      # Runner-only DLLs are discarded with the VM. No upload or secrets.

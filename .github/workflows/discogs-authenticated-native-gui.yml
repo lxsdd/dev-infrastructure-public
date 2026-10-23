@@ -63,7 +63,16 @@ jobs:
           ref: 35369054c56f4c6ccb2f802944e9675852fd35ec
           path: discogger/external/discogger-rich-fixtures
           persist-credentials: false
-      - uses: microsoft/setup-msbuild@v2
+      - name: Locate runner-installed Visual Studio MSBuild without third-party setup action
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if(-not (Test-Path -LiteralPath $vswhere)){throw 'VSWhere unavailable on Windows runner'}
+          $msbuild=@(& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe')
+          if($msbuild.Count -ne 1 -or -not (Test-Path -LiteralPath $msbuild[0])){throw 'MSBuild v143 toolset unavailable'}
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $msbuild[0])
+          Write-Host 'PROTECTED_NATIVE_GUI_MSBUILD_FOUND=PASS'
       - name: Check exact source identity and secret-free runner gates
         shell: pwsh
         run: |

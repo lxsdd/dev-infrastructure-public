@@ -1,0 +1,49 @@
+name: Discogs local OAuth setup PowerShell selftests (no secrets)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/discogs-oauth-local-bootstrap.ps1'
+      - 'docs/DISCOGS-CENTRAL-OAUTH-QA.md'
+      - '.github/workflows/discogs-oauth-bootstrap-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-credential-free:
+    runs-on: windows-2022
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Parse script in both PowerShell engines
+        shell: pwsh
+        run: |
+          $t=$null;$e=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location) 'scripts/discogs-oauth-local-bootstrap.ps1'),
+            [ref]$t,[ref]$e)
+          if($e.Count){foreach($err in $e){Write-Host ("Parser: line="+$err.Extent.StartLineNumber+" id="+$err.ErrorId+" text="+$err.Message)}; throw "PowerShell syntax errors: $($e.Count)"}
+      - name: 'Windows PowerShell 5.1: RFC3986 and PLAINTEXT signature/response tests'
+        shell: powershell
+        run: ./scripts/discogs-oauth-local-bootstrap.ps1 -SelfTest
+      - name: 'PowerShell 7: independent engine sanity'
+        shell: pwsh
+        run: ./scripts/discogs-oauth-local-bootstrap.ps1 -SelfTest
+      - name: Windows PowerShell 5.1 whole mocked OAuth authorization and clipboard lifecycle
+        shell: powershell
+        run: ./tests/discogs-oauth-bootstrap-interactive-mock.ps1
+      - name: PowerShell 7 whole mocked OAuth authorization and clipboard lifecycle
+        shell: pwsh
+        run: ./tests/discogs-oauth-bootstrap-interactive-mock.ps1
+      - name: No accidental network, secrets or clipboard use during selftests
+        shell: pwsh
+        run: |
+          $s=Get-Content scripts/discogs-oauth-local-bootstrap.ps1 -Raw
+          if($s -notmatch 'if \(\$SelfTest\) \{ Run-SelfTest; return \}') { throw 'SelfTest is not isolated' }
+          if($s -match 'Write-Host \$(access|consumerSecret|tmp)' -or $s -match 'upload-artifact') { throw 'Token exposure risk' }
+          Write-Host 'DISCOGS_LOCAL_BOOTSTRAP_SECRET_BOUNDARY=PASS'

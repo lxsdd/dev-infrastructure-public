@@ -8,7 +8,7 @@ NEW = "b" * 40
 
 def task(**changes):
     data = dict(repository="example/foobar", branch="work/test", expected_head=SHA,
-                state="QUEUED", source_visibility="public", runner_kind="managed_agent")
+                state="QUEUED", source_visibility="public", runner_kind="chatgpt_subscription_task")
     data.update(changes)
     return data
 
@@ -23,7 +23,7 @@ def job(**changes):
 class AgentDispatchContractTests(unittest.TestCase):
     def check(self, item=None, **kwargs):
         return dispatch_decision(item or task(), actual_head=kwargs.pop("actual_head", SHA),
-                                 budget_available=kwargs.pop("budget_available", True),
+                                 plan_capacity_available=kwargs.pop("plan_capacity_available", True),
                                  now=kwargs.pop("now", 100),
                                  leases=kwargs.pop("leases", ()))
 
@@ -43,8 +43,14 @@ class AgentDispatchContractTests(unittest.TestCase):
                        state="RUNNING", expires_at=99)]
         self.assertEqual(self.check(leases=leases), "RECONCILE_REMOTE")
 
-    def test_budget_is_a_hard_gate(self):
-        self.assertEqual(self.check(budget_available=False), "BUDGET_HOLD")
+    def test_subscription_plan_capacity_is_a_hard_gate(self):
+        self.assertEqual(self.check(plan_capacity_available=False), "PLAN_LIMIT_HOLD")
+
+    def test_external_paid_api_is_forbidden(self):
+        self.assertEqual(self.check(task(requires_paid_api=True)), "PAID_PROVIDER_FORBIDDEN")
+
+    def test_paid_compute_is_forbidden(self):
+        self.assertEqual(self.check(task(requires_billed_compute=True)), "PAID_PROVIDER_FORBIDDEN")
 
     def test_no_automatic_owner_approval(self):
         self.assertEqual(self.check(task(owner_approval_required=True)), "BLOCKED_OWNER")

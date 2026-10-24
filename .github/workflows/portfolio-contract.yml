@@ -1,0 +1,30 @@
+name: Public portfolio preservation contract
+
+on:
+  push:
+    paths:
+      - 'portfolio_contract/**'
+      - '.github/workflows/portfolio-contract.yml'
+  pull_request:
+    paths:
+      - 'portfolio_contract/**'
+      - '.github/workflows/portfolio-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-contract-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject silent loss and fabricated acceptance with synthetic fixtures
+        run: python3 -m unittest discover -s portfolio_contract -p 'test_*.py' -v

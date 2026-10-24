@@ -58,10 +58,23 @@ def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
 
 
 def ci_decision(attestation: Mapping, *, expected_head: str,
-                required_jobs: tuple[str, ...]) -> str:
-    """Return PASS only for exact-head completed real-step required job success."""
-    if not expected_head or not required_jobs:
+                required_jobs: tuple[str, ...],
+                require_no_artifacts: bool = False) -> str:
+    """Evaluate an exact-source, real-step CI witness without making API calls.
+
+    Callers that attest a source-only workflow MUST supply the actual workflow-run
+    artifact inventory and set require_no_artifacts=True. A missing inventory is
+    not proof of zero published binaries; it cannot be silently interpreted as [].
+    A PR-only run lookup returning [] for a push event likewise means NOT_RUN,
+    not a tested failure. The caller must discover the push run independently.
+    """
+    if (not isinstance(expected_head, str) or not expected_head or
+            not isinstance(required_jobs, (tuple, list)) or not required_jobs or
+            any(not isinstance(name, str) or not name for name in required_jobs) or
+            len(set(required_jobs)) != len(required_jobs)):
         return "INVALID_EXPECTATION"
+    if not isinstance(attestation, Mapping):
+        return "INVALID_ATTESTATION"
     if attestation.get("head_sha") != expected_head:
         return "STALE_HEAD"
     jobs = attestation.get("jobs")
@@ -80,8 +93,15 @@ def ci_decision(attestation: Mapping, *, expected_head: str,
         job = found[name]
         if job.get("status") != "completed":
             return "PENDING"
-        if not isinstance(job.get("executed_steps"), int) or job["executed_steps"] <= 0:
+        steps = job.get("executed_steps")
+        if not isinstance(steps, int) or isinstance(steps, bool) or steps <= 0:
             return "NOT_RUN"
         if job.get("conclusion") != "success":
             return "FAIL"
+    if require_no_artifacts:
+        artifacts = attestation.get("artifacts")
+        if not isinstance(artifacts, list):
+            return "ARTIFACTS_NOT_VERIFIED"
+        if artifacts:
+            return "ARTIFACTS_PRESENT"
     return "PASS"

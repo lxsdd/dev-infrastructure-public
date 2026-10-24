@@ -23,7 +23,8 @@ class BranchOwnershipContractTests(unittest.TestCase):
             assignments=registry() if assignments is None else assignments,
             actual_head=kw.pop("actual_head", A),
             expected_ledger_sha=kw.pop("expected_ledger_sha", B),
-            observed_ledger_sha=kw.pop("observed_ledger_sha", B))
+            observed_ledger_sha=kw.pop("observed_ledger_sha", B),
+            actual_pr_state=kw.pop("actual_pr_state", "open"))
 
     def test_agent_lane_can_request_claim(self):
         self.assertEqual(self.decide(), "READY_TO_CLAIM")
@@ -74,6 +75,26 @@ class BranchOwnershipContractTests(unittest.TestCase):
     def test_missing_claim_field_fails_closed(self):
         rows = registry()
         del rows[0]["claim"]
+        self.assertEqual(self.decide(rows), "INVALID_ASSIGNMENT")
+
+    def test_unverified_live_pr_state_blocks_claim(self):
+        self.assertEqual(self.decide(actual_pr_state=None), "PR_STATE_UNVERIFIED")
+
+    def test_closed_or_merged_live_pr_blocks_claim(self):
+        for state in ("closed", "merged"):
+            with self.subTest(state=state):
+                self.assertEqual(self.decide(actual_pr_state=state), "PR_NOT_OPEN")
+
+    def test_merged_historical_ledger_snapshot_blocks_spoofed_open_state(self):
+        rows = registry("AGENT")
+        rows[0]["remote_status_snapshot"] = dict(
+            state="closed", merged=True, merged_at="2026-10-22T20:52:55Z")
+        self.assertEqual(self.decide(rows, actual_pr_state="open"),
+                         "PR_SNAPSHOT_CONFLICT")
+
+    def test_invalid_ledger_pr_snapshot_rejected(self):
+        rows = registry("AGENT")
+        rows[0]["remote_status_snapshot"] = "open"
         self.assertEqual(self.decide(rows), "INVALID_ASSIGNMENT")
 
     def test_unknown_actor_rejected(self):

@@ -1,15 +1,15 @@
-"""Pure, side-effect-free scheduling gates for a future external agent orchestrator.
+"""Pure, side-effect-free preflight gates for existing-subscription ChatGPT tasks.
 
 This module neither launches a model nor accesses GitHub. It is safe to run with
 synthetic fixtures on public CI; authorization and remote session reconciliation
-remain the responsibility of a separately provisioned controller.
+remain outside this code. It never invokes a paid model API or starts a task.
 """
 
 from collections.abc import Mapping
 
 
 def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
-                      budget_available: bool = False, now: int = 0) -> str:
+                      plan_capacity_available: bool = False, now: int = 0) -> str:
     """Fail-closed preflight; a returned READY is only a permission to *consider* dispatch."""
     required = ("repository", "branch", "expected_head", "state",
                 "source_visibility", "runner_kind")
@@ -23,7 +23,9 @@ def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
         return "STALE_HEAD"
     if task.get("owner_approval_required") or task.get("risk_flags"):
         return "BLOCKED_OWNER"
-    if task["runner_kind"] != "managed_agent":
+    if task.get("requires_paid_api") or task.get("requires_billed_compute"):
+        return "PAID_PROVIDER_FORBIDDEN"
+    if task["runner_kind"] != "chatgpt_subscription_task":
         return "INVALID_RUNNER"
     if task["source_visibility"] not in {"public", "private"}:
         return "INVALID_TASK"
@@ -31,8 +33,8 @@ def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
         return "PRIVACY_BLOCK"
     if task.get("same_failure_count", 0) >= 3:
         return "REPEATED_FAILURE_HOLD"
-    if not budget_available:
-        return "BUDGET_HOLD"
+    if not plan_capacity_available:
+        return "PLAN_LIMIT_HOLD"
 
     for lease in leases:
         if (lease.get("repository") == task["repository"] and

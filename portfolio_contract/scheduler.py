@@ -82,11 +82,16 @@ def ci_decision(attestation: Mapping, *, expected_head: str,
         return "NOT_RUN"
     found = {}
     for job in jobs:
-        name = job.get("name") if isinstance(job, Mapping) else None
+        # API and cached CI evidence are external input. Invalid job entries
+        # must never crash this fail-closed attestation gate.
+        if not isinstance(job, Mapping):
+            return "INVALID_ATTESTATION"
+        name = job.get("name")
+        if not isinstance(name, str) or not name:
+            return "INVALID_ATTESTATION"
         if name in found:
             return "AMBIGUOUS"
-        if name:
-            found[name] = job
+        found[name] = job
     if any(name not in found for name in required_jobs):
         return "NOT_RUN"
     for name in required_jobs:

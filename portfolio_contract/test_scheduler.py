@@ -22,13 +22,33 @@ def job(**changes):
 
 class AgentDispatchContractTests(unittest.TestCase):
     def check(self, item=None, **kwargs):
-        return dispatch_decision(item or task(), actual_head=kwargs.pop("actual_head", SHA),
-                                 plan_capacity_available=kwargs.pop("plan_capacity_available", True),
-                                 now=kwargs.pop("now", 100),
-                                 leases=kwargs.pop("leases", ()))
+        item = item or task()
+        ownership = kwargs.pop("ownership_assignments", [
+            dict(repository=item["repository"], branch=item["branch"],
+                 head_sha=item["expected_head"], mode="AGENT", claim=None)])
+        return dispatch_decision(
+            item, actual_head=kwargs.pop("actual_head", SHA),
+            plan_capacity_available=kwargs.pop("plan_capacity_available", True),
+            now=kwargs.pop("now", 100), leases=kwargs.pop("leases", ()),
+            actor=kwargs.pop("actor", "AGENT"),
+            ownership_assignments=ownership,
+            expected_ledger_sha=kwargs.pop("expected_ledger_sha", NEW),
+            observed_ledger_sha=kwargs.pop("observed_ledger_sha", NEW))
 
     def test_ready_public_pilot(self):
-        self.assertEqual(self.check(), "READY")
+        self.assertEqual(self.check(), "READY_TO_CLAIM")
+
+    def test_dispatch_without_owned_branch_must_stop(self):
+        self.assertEqual(self.check(ownership_assignments=None), "INVALID_LEDGER")
+
+    def test_dispatch_respects_chat_ownership(self):
+        rows = [dict(repository="example/foobar", branch="work/test",
+                     head_sha=SHA, mode="CHAT", claim=None)]
+        self.assertEqual(self.check(ownership_assignments=rows),
+                         "OTHER_LANE_OWNS_BRANCH")
+
+    def test_dispatch_cannot_skip_stale_ledger_reconciliation(self):
+        self.assertEqual(self.check(observed_ledger_sha=SHA), "STALE_LEDGER")
 
     def test_stale_sha_never_dispatches(self):
         self.assertEqual(self.check(actual_head=NEW), "STALE_HEAD")

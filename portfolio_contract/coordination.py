@@ -15,7 +15,8 @@ _ACTORS = {"CHAT", "AGENT"}
 
 def ownership_decision(task: Mapping, *, actor: str, assignments,
                        actual_head: str, expected_ledger_sha: str,
-                       observed_ledger_sha: str) -> str:
+                       observed_ledger_sha: str,
+                       actual_pr_state: str | None = None) -> str:
     """Evaluate one prospective branch claim; all data is supplied by the caller."""
     if actor not in _ACTORS:
         return "INVALID_ACTOR"
@@ -29,6 +30,12 @@ def ownership_decision(task: Mapping, *, actor: str, assignments,
         return "INVALID_LEDGER_SHA"
     if expected_ledger_sha != observed_ledger_sha:
         return "STALE_LEDGER"
+    # A matching branch HEAD does not prove the pull request is still active.
+    # The caller must independently read the *current* GitHub PR state.
+    if actual_pr_state is None or not isinstance(actual_pr_state, str):
+        return "PR_STATE_UNVERIFIED"
+    if actual_pr_state != "open":
+        return "PR_NOT_OPEN"
 
     seen = set()
     matching = []
@@ -48,6 +55,14 @@ def ownership_decision(task: Mapping, *, actor: str, assignments,
     entry = matching[0]
     if entry.get("mode") not in _MODES or "claim" not in entry:
         return "INVALID_ASSIGNMENT"
+    snapshot = entry.get("remote_status_snapshot")
+    if snapshot is not None:
+        if not isinstance(snapshot, Mapping):
+            return "INVALID_ASSIGNMENT"
+        # A previously observed closure/merge must be explicitly reconciled
+        # in the private ledger before this branch could ever be reclaimed.
+        if snapshot.get("state") != "open" or snapshot.get("merged") is True:
+            return "PR_SNAPSHOT_CONFLICT"
     if not isinstance(actual_head, str) or not _SHA.fullmatch(actual_head):
         return "INVALID_HEAD"
     if entry.get("head_sha") != actual_head or task.get("expected_head") != actual_head:

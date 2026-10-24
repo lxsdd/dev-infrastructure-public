@@ -1,0 +1,31 @@
+name: foobar2000 2.x isolated host smoke
+description: "Runs a verified official x86/x64 foobar host and optionally checks a locally built component was actually loaded."
+inputs:
+  architecture:
+    required: true
+    description: "Win32 or x64"
+  component-dll:
+    required: false
+    description: "Existing same-job DLL; blank performs only HOST_BOOT"
+    default: ""
+  profile-check-script:
+    required: false
+    description: "Optional read-only qualification script from this CI checkout for the disposable foobar profile"
+    default: ""
+  restart-profile-check:
+    required: false
+    description: "Opt-in: close disposable foobar gracefully, restart the same profile and repeat verification"
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Verify foobar2000 boot and component module loading
+      shell: pwsh
+      env:
+        FB2K_ACTION_ROOT: ${{ github.action_path }}
+        FB2K_ARCH: ${{ inputs.architecture }}
+        FB2K_COMPONENT: ${{ inputs.component-dll }}
+        FB2K_PROFILE_CHECK: ${{ inputs.profile-check-script }}
+        FB2K_RESTART_CHECK: ${{ inputs.restart-profile-check }}
+      run: |
+        & (Join-Path $env:FB2K_ACTION_ROOT 'host-smoke.ps1') -Architecture $env:FB2K_ARCH -ComponentDll $env:FB2K_COMPONENT -ProfileCheckScript $env:FB2K_PROFILE_CHECK -RestartProfileCheck $env:FB2K_RESTART_CHECK

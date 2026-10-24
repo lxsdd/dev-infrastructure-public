@@ -1,0 +1,45 @@
+name: Qualify GitHub-mirrored foobar installers in real Win32/x64 hosts
+
+on:
+  push:
+    branches:
+      - work/foobar-dual-host-20261020
+    paths:
+      - .github/workflows/foobar-github-mirror-host-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows-original-host:
+    # REAL isolated foobar2000 host boots, not synthetic fake-PASS.
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PowerShell parser and pinned installer cache contract
+        shell: pwsh
+        run: |
+          foreach ($file in @(
+            '.github/actions/foobar-host-smoke/host-smoke.ps1',
+            '.github/actions/foobar-host-smoke/pinned-installer-cache.ps1',
+            '.github/actions/foobar-host-smoke/tests/installer-cache-tests.ps1'
+          )) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path (Get-Location) $file), [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { throw "$file parse failure: $($errors | Out-String)" }
+          }
+          & ./.github/actions/foobar-host-smoke/tests/installer-cache-tests.ps1
+      - name: Boot actual foobar2000 original ${{ matrix.architecture }} installer from GitHub release
+        uses: ./.github/actions/foobar-host-smoke
+        with:
+          architecture: ${{ matrix.architecture }}
+      - name: Record verified host boot
+        shell: pwsh
+        run: |
+          Write-Host 'GITHUB_MIRROR_NATIVE_HOST_${{ matrix.architecture }}=PASS'

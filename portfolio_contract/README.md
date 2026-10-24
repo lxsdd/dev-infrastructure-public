@@ -5,6 +5,7 @@ This directory is an openly testable, **generic** implementation of the portfoli
 - No private GitHub repositories, branch names, PR titles, user paths, credentials or real project data are stored here.
 - The fixture uses only fictitious `example/...` repository identities and artificial 40-character commit IDs.
 - The script does not connect to GitHub, use an API token or mutate files. It validates caller-supplied in-memory JSON dictionaries.
+- `scheduler.py` adds a side-effect-free **dispatch/attestation preflight**: exact-HEAD check, duplicate/expired lease reconciliation, explicit spending and owner gates, private-to-public CI deny, and non-PASS for zero-step/missing/failing GitHub jobs. Seventeen synthetic tests in `test_scheduler.py` enforce these fail-closed rules; **nothing here creates live sessions, leases, schedules or paid requests**.
 - All repository-specific state, exact private PR inventory and decisions remain in private `lxsdd/dev-infrastructure` Draft PR #20.
 - A green public Actions result qualifies this portable validation logic and the synthetic negative-test suite; it **does not** assert that the private portfolio itself ran on Actions or is fully semantically reviewed.
 

@@ -1,0 +1,77 @@
+name: Shared foobar2000 x86/x64 host baseline
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/actions/foobar-host-smoke/**"
+      - ".github/workflows/foobar-host-smoke.yml"
+      - "docs/FOOBAR-HOST-MATRIX.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foobar-host-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  official-host-boot:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed on malformed host PowerShell
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location) '.github/actions/foobar-host-smoke/host-smoke.ps1'),
+            [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw ($errors | Out-String) }
+      - name: Start verified official foobar2000 host ${{ matrix.architecture }}
+        uses: ./.github/actions/foobar-host-smoke
+        with:
+          architecture: ${{ matrix.architecture }}
+
+      - name: Checkout pinned previously green Studio source (public, no secrets)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/music-metadata-studio
+          ref: a76e54900654e2c350f34ee7bd9c78570d185bc0
+          path: studio
+          persist-credentials: false
+      - uses: microsoft/setup-msbuild@v2
+        if: github.event_name == 'pull_request'
+      - name: Build pinned read-only Studio Win32/x64 test component
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        working-directory: studio
+        run: ./scripts/build-foobar.ps1 -Platform '${{ matrix.architecture }}' -Configuration Release -PlatformToolset v143
+      - name: Qualify invented edition mix identities, provenance, and stale-source lockout
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/foobar-host-smoke
+        with:
+          architecture: ${{ matrix.architecture }}
+          component-dll: studio/out/foobar/${{ matrix.architecture }}/Release/foo_music_metadata_studio.dll
+          context-command: 'Music Metadata Studio/Prepare Tracks (Preview)...'
+          expected-window-title: 'Music Metadata Studio - Prepare Tracks (Read-only)'
+          required-control-ids: '270,273,271,291,292,293,294,299'
+          offline-clipboard-test: |
+            @provider=discogs
+            @id=release:123456
+            @scope=edition
+            TITLE=Runner Synthetic Recording
+            GENRE=Progressive Trance
+            DATE_RAW@edition=2026-10-20
+          clipboard-button-id: '289'
+          clipboard-list-id: '271'
+          beatport-edition-host-probe: 'true'
+          stale-physical-host-probe: 'true'

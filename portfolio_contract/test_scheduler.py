@@ -90,9 +90,11 @@ class AgentDispatchContractTests(unittest.TestCase):
 
 
 class CiAttestationContractTests(unittest.TestCase):
-    def check(self, jobs, sha=SHA, required=("contract",)):
-        return ci_decision({"head_sha": sha, "jobs": jobs},
-                           expected_head=SHA, required_jobs=required)
+    def check(self, jobs, sha=SHA, required=("contract",),
+              require_no_artifacts=False, **evidence):
+        return ci_decision({"head_sha": sha, "jobs": jobs, **evidence},
+                           expected_head=SHA, required_jobs=required,
+                           require_no_artifacts=require_no_artifacts)
 
     def test_exact_commit_real_steps_pass(self):
         self.assertEqual(self.check([job()]), "PASS")
@@ -115,6 +117,44 @@ class CiAttestationContractTests(unittest.TestCase):
 
     def test_duplicate_job_identity_is_ambiguous(self):
         self.assertEqual(self.check([job(), job()]), "AMBIGUOUS")
+
+    def test_source_only_exact_empty_artifacts_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True,
+                                    artifacts=[]), "PASS")
+
+    def test_source_only_missing_artifact_inventory_does_not_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True),
+                         "ARTIFACTS_NOT_VERIFIED")
+
+    def test_source_only_invalid_artifact_inventory_does_not_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True,
+                                    artifacts=None), "ARTIFACTS_NOT_VERIFIED")
+
+    def test_source_only_published_binary_is_not_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True,
+                                    artifacts=[{"name": "public-build.zip"}]),
+                         "ARTIFACTS_PRESENT")
+
+    def test_source_only_wrong_commit_with_no_artifacts_still_stale(self):
+        self.assertEqual(self.check([job()], sha=NEW,
+                                    require_no_artifacts=True, artifacts=[]),
+                         "STALE_HEAD")
+
+    def test_source_only_empty_push_lookup_is_not_failure_or_pass(self):
+        self.assertEqual(self.check([], require_no_artifacts=True,
+                                    artifacts=[]), "NOT_RUN")
+
+    def test_boolean_executed_step_attestation_is_not_real_step_count(self):
+        self.assertEqual(self.check([job(executed_steps=True)]), "NOT_RUN")
+
+    def test_duplicate_required_job_contract_is_invalid(self):
+        self.assertEqual(self.check([job()], required=("contract", "contract")),
+                         "INVALID_EXPECTATION")
+
+    def test_nonmapping_ci_attestation_is_rejected(self):
+        self.assertEqual(ci_decision(None, expected_head=SHA,
+                                     required_jobs=("contract",)),
+                         "INVALID_ATTESTATION")
 
 
 if __name__ == "__main__":

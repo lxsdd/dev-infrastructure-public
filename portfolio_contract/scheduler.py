@@ -7,9 +7,14 @@ remain outside this code. It never invokes a paid model API or starts a task.
 
 from collections.abc import Mapping
 
+from coordination import ownership_decision
+
 
 def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
-                      plan_capacity_available: bool = False, now: int = 0) -> str:
+                      plan_capacity_available: bool = False, now: int = 0,
+                      actor: str = "", ownership_assignments=None,
+                      expected_ledger_sha: str = "",
+                      observed_ledger_sha: str = "") -> str:
     """Fail-closed preflight; a returned READY is only a permission to *consider* dispatch."""
     required = ("repository", "branch", "expected_head", "state",
                 "source_visibility", "runner_kind")
@@ -44,7 +49,12 @@ def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
                 # An expired lease is not proof the remote agent has stopped.
                 return "RECONCILE_REMOTE"
             return "ALREADY_RUNNING"
-    return "READY"
+    # This is a preflight only: the caller must atomically claim the private
+    # ledger with its GitHub blob SHA and re-read it before touching source.
+    return ownership_decision(
+        task, actor=actor, assignments=ownership_assignments,
+        actual_head=actual_head, expected_ledger_sha=expected_ledger_sha,
+        observed_ledger_sha=observed_ledger_sha)
 
 
 def ci_decision(attestation: Mapping, *, expected_head: str,

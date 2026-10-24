@@ -14,7 +14,8 @@ def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
                       plan_capacity_available: bool = False, now: int = 0,
                       actor: str = "", ownership_assignments=None,
                       expected_ledger_sha: str = "",
-                      observed_ledger_sha: str = "") -> str:
+                      observed_ledger_sha: str = "",
+                      actual_pr_state: str | None = None) -> str:
     """Fail-closed preflight; a returned READY is only a permission to *consider* dispatch."""
     required = ("repository", "branch", "expected_head", "state",
                 "source_visibility", "runner_kind")
@@ -54,7 +55,8 @@ def dispatch_decision(task: Mapping, *, actual_head: str, leases=(),
     return ownership_decision(
         task, actor=actor, assignments=ownership_assignments,
         actual_head=actual_head, expected_ledger_sha=expected_ledger_sha,
-        observed_ledger_sha=observed_ledger_sha)
+        observed_ledger_sha=observed_ledger_sha,
+        actual_pr_state=actual_pr_state)
 
 
 def ci_decision(attestation: Mapping, *, expected_head: str,

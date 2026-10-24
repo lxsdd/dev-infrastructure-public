@@ -12,15 +12,16 @@ import json
 import re
 from pathlib import Path
 
-UPLOAD = re.compile(r"^\s*(?:-\s*)?uses:\s*actions/upload-artifact@", re.I)
+UPLOAD = re.compile(r"""^\s*(?:-\s*)?uses:\s*[\'"]?actions/upload-artifact@""", re.I)
 RELEASE_ACTION = re.compile(
-    r"^\s*(?:-\s*)?uses:\s*(?:softprops/action-gh-release|actions/create-release)@", re.I
+    r"""^\s*(?:-\s*)?uses:\s*[\'"]?(?:softprops/action-gh-release|actions/create-release)@""", re.I
 )
 RELEASE_CLI = re.compile(r"\bgh\s+release\s+(?:create|upload)\b", re.I)
 INDENT_JOB = re.compile(r"^  ([A-Za-z_][A-Za-z_0-9-]*):(?:\s*#.*)?\s*$")
 FALSE_IF = re.compile(r"^if:\s*false(?:\s*#.*)?$", re.I)
 STEP = re.compile(r"^-\s+(?:uses:|name:|run:)", re.I)
 DYNAMIC_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*.*\$\{\{", re.I)
+ALIAS_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*[*&]", re.I)
 
 
 def _level(row: str) -> int:
@@ -102,6 +103,8 @@ def scan_workflows(
                 errors.append(f"{name}:{index + 1}: tab indentation")
             if DYNAMIC_USES.search(row):
                 errors.append(f"{name}:{index + 1}: dynamic action reference")
+            if ALIAS_USES.search(row):
+                errors.append(f"{name}:{index + 1}: YAML action alias/anchor is not safely auditable")
             if UPLOAD.search(row):
                 observed[name] = observed.get(name, 0) + 1
                 if not _disabled(lines, index):

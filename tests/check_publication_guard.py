@@ -128,6 +128,50 @@ class PublicationGuardTests(unittest.TestCase):
         self.assertTrue(self.audit(BASE.replace("actions/upload-artifact@v7",
                                                  "${{ inputs.action_name }}")))
 
+    def test_quoted_upload_cannot_bypass_expected_count_or_enabled_gate(self):
+        for quote in ("'", '"'):
+            with self.subTest(quote=quote):
+                unsafe_step = (
+                    "      - uses: " + quote +
+                    "actions/upload-artifact@v7" + quote + "\n"
+                )
+                source = BASE.replace("  release:\n", unsafe_step + "  release:\n", 1)
+                self.assertTrue(self.audit(source))
+
+    def test_quoted_release_action_requires_gate(self):
+        for action in ("softprops/action-gh-release@v2",
+                       "actions/create-release@v1"):
+            for quote in ("'", '"'):
+                with self.subTest(action=action, quote=quote):
+                    source = (
+                        BASE + "  accidental:\n"
+                        "    runs-on: ubuntu-latest\n"
+                        "    steps:\n"
+                        "      - uses: " + quote + action + quote + "\n"
+                    )
+                    self.assertTrue(self.audit(source))
+
+    def test_yaml_action_alias_or_anchor_rejected(self):
+        for value in ("*publication_action",
+                      "&publication_action actions/upload-artifact@v7"):
+            with self.subTest(value=value):
+                source = BASE.replace(
+                    "  release:\n",
+                    "      - uses: " + value + "\n  release:\n", 1)
+                self.assertTrue(self.audit(source))
+
+    def test_quoted_upload_remains_valid_when_explicitly_disabled(self):
+        for quote in ("'", '"'):
+            with self.subTest(quote=quote):
+                source = BASE.replace(
+                    "uses: actions/upload-artifact@v7",
+                    "uses: " + quote + "actions/upload-artifact@v7" + quote, 1)
+                self.assertEqual([], self.audit(source))
+
+    def test_quoted_action_comment_not_counted(self):
+        source = BASE + "# - uses: 'actions/upload-artifact@v7'\n"
+        self.assertEqual([], self.audit(source))
+
     def test_comments_not_counted(self):
         src = BASE + "\n# - uses: actions/upload-artifact@v7\n"
         self.assertEqual([], self.audit(src))

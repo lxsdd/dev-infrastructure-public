@@ -156,6 +156,21 @@ class CiAttestationContractTests(unittest.TestCase):
                                      required_jobs=("contract",)),
                          "INVALID_ATTESTATION")
 
+    def test_nonmapping_job_entry_is_rejected(self):
+        self.assertEqual(self.check([None]), "INVALID_ATTESTATION")
+
+    def test_list_job_name_is_rejected_without_exception(self):
+        self.assertEqual(self.check([job(name=[])]), "INVALID_ATTESTATION")
+
+    def test_numeric_job_name_is_rejected(self):
+        self.assertEqual(self.check([job(name=123)]), "INVALID_ATTESTATION")
+
+    def test_null_job_name_is_rejected(self):
+        self.assertEqual(self.check([job(name=None)]), "INVALID_ATTESTATION")
+
+    def test_empty_job_name_is_rejected(self):
+        self.assertEqual(self.check([job(name="")]), "INVALID_ATTESTATION")
+
 
 if __name__ == "__main__":
     unittest.main()

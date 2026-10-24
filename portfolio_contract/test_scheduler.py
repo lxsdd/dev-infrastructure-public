@@ -33,7 +33,8 @@ class AgentDispatchContractTests(unittest.TestCase):
             actor=kwargs.pop("actor", "AGENT"),
             ownership_assignments=ownership,
             expected_ledger_sha=kwargs.pop("expected_ledger_sha", NEW),
-            observed_ledger_sha=kwargs.pop("observed_ledger_sha", NEW))
+            observed_ledger_sha=kwargs.pop("observed_ledger_sha", NEW),
+            actual_pr_state=kwargs.pop("actual_pr_state", "open"))
 
     def test_ready_public_pilot(self):
         self.assertEqual(self.check(), "READY_TO_CLAIM")
@@ -49,6 +50,12 @@ class AgentDispatchContractTests(unittest.TestCase):
 
     def test_dispatch_cannot_skip_stale_ledger_reconciliation(self):
         self.assertEqual(self.check(observed_ledger_sha=SHA), "STALE_LEDGER")
+
+    def test_dispatch_without_live_pr_verification_is_denied(self):
+        self.assertEqual(self.check(actual_pr_state=None), "PR_STATE_UNVERIFIED")
+
+    def test_dispatch_after_pr_merged_is_denied(self):
+        self.assertEqual(self.check(actual_pr_state="closed"), "PR_NOT_OPEN")
 
     def test_stale_sha_never_dispatches(self):
         self.assertEqual(self.check(actual_head=NEW), "STALE_HEAD")

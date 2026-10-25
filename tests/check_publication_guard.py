@@ -168,6 +168,42 @@ class PublicationGuardTests(unittest.TestCase):
                     "uses: " + quote + "actions/upload-artifact@v7" + quote, 1)
                 self.assertEqual([], self.audit(source))
 
+    def test_noncanonical_yaml_uses_forms_rejected(self):
+        # YAML maps folded/literal scalar values, tagged scalars, quoted keys,
+        # spaced colons, and inline mappings to actions that a simple
+        # canonical 'uses: action@ref' regex otherwise fails to count.
+        # These additional steps must fail even with a previously reviewed
+        # canonical upload already satisfying the exact count.
+        unsafe = (
+            "      - uses: >-\n          actions/upload-artifact@v4\n",
+            "      - uses: |-\n          actions/upload-artifact@v4\n",
+            "      - 'uses': actions/upload-artifact@v4\n",
+            '      - "uses": actions/upload-artifact@v4\n',
+            "      - uses : actions/upload-artifact@v4\n",
+            "      - uses: !!str actions/upload-artifact@v4\n",
+            "      - {name: Publish, uses: actions/upload-artifact@v4}\n",
+        )
+        for variant in unsafe:
+            with self.subTest(variant=variant):
+                source = BASE.replace("  release:\n", variant + "  release:\n", 1)
+                errors = self.audit(source)
+                self.assertTrue(any("noncanonical YAML action key/scalar" in err
+                                    for err in errors), errors)
+
+    def test_noncanonical_yaml_uses_not_exempt_by_literal_false(self):
+        source = BASE.replace(
+            "uses: actions/upload-artifact@v7",
+            "uses: >-\n          actions/upload-artifact@v7", 1)
+        self.assertTrue(any("noncanonical YAML action key/scalar" in err
+                            for err in self.audit(source)))
+
+    def test_canonical_nonpublication_action_not_flagged(self):
+        source = BASE.replace(
+            "  release:\n",
+            "      - uses: actions/checkout@v5\n"
+            "  release:\n", 1)
+        self.assertEqual([], self.audit(source))
+
     def test_quoted_action_comment_not_counted(self):
         source = BASE + "# - uses: 'actions/upload-artifact@v7'\n"
         self.assertEqual([], self.audit(source))

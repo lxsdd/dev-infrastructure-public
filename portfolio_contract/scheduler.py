@@ -112,3 +112,50 @@ def ci_decision(attestation: Mapping, *, expected_head: str,
         if artifacts:
             return "ARTIFACTS_PRESENT"
     return "PASS"
+
+def synthetic_ci_route_decision(route: Mapping, *, actual_head: str,
+                                private_actions_available: bool = False) -> str:
+    """Fail-closed *proposal*, not a workflow dispatcher or licensing decision.
+
+    Synthetic, source-only public CI is the default. An exhausted private
+    Actions allowance cannot be bypassed by copying private sources or data
+    to a public runner. The caller must independently verify source rights,
+    exact GitHub commit and the actual downstream CI job/artifact evidence.
+    """
+    if not isinstance(route, Mapping) or type(private_actions_available) is not bool:
+        return "INVALID_ROUTE"
+    if (route.get("source_visibility") not in ("public", "private") or
+            route.get("runner_visibility") not in ("public", "private")):
+        return "INVALID_ROUTE"
+    expected = route.get("expected_head")
+    if (not isinstance(expected, str) or len(expected) != 40 or
+            any(char not in "0123456789abcdef" for char in expected) or
+            not isinstance(actual_head, str)):
+        return "INVALID_ROUTE"
+    flags = ("source_cleared", "synthetic_only", "uses_secrets",
+             "contains_private_data", "uploads_artifacts",
+             "requires_paid_compute")
+    if any(type(route.get(flag)) is not bool for flag in flags):
+        return "INVALID_ROUTE"
+    if actual_head != expected:
+        return "STALE_HEAD"
+    if route["requires_paid_compute"]:
+        return "PAID_PROVIDER_FORBIDDEN"
+    if route["contains_private_data"] or (route["source_visibility"] == "private"
+                                           and route["runner_visibility"] == "public"):
+        return "PRIVACY_BLOCK"
+    if route["uses_secrets"]:
+        return "SECRET_BLOCK"
+    if route["uploads_artifacts"]:
+        return "PUBLICATION_BLOCK"
+    if not route["synthetic_only"]:
+        return "NON_SYNTHETIC_INPUT"
+    if route["source_visibility"] == "public":
+        if not route["source_cleared"]:
+            return "SOURCE_NOT_CLEARED"
+        if route["runner_visibility"] == "private":
+            return "USE_PUBLIC_RUNNER"
+        return "PUBLIC_SYNTHETIC_ELIGIBLE"
+    if not private_actions_available:
+        return "PRIVATE_QUOTA_HOLD"
+    return "PRIVATE_SYNTHETIC_ELIGIBLE"

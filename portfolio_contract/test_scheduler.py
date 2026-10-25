@@ -1,6 +1,6 @@
 import unittest
 
-from scheduler import ci_decision, dispatch_decision
+from scheduler import ci_decision, dispatch_decision, synthetic_ci_route_decision
 
 SHA = "a" * 40
 NEW = "b" * 40
@@ -177,6 +177,83 @@ class CiAttestationContractTests(unittest.TestCase):
 
     def test_empty_job_name_is_rejected(self):
         self.assertEqual(self.check([job(name="")]), "INVALID_ATTESTATION")
+
+
+class SyntheticCiRouteContractTests(unittest.TestCase):
+    def route(self, **changes):
+        data = dict(source_visibility="public", runner_visibility="public",
+                    expected_head=SHA, source_cleared=True,
+                    synthetic_only=True, uses_secrets=False,
+                    contains_private_data=False, uploads_artifacts=False,
+                    requires_paid_compute=False)
+        data.update(changes)
+        return data
+
+    def check(self, route=None, *, actual_head=SHA, private_actions_available=False):
+        return synthetic_ci_route_decision(
+            self.route() if route is None else route,
+            actual_head=actual_head,
+            private_actions_available=private_actions_available)
+
+    def test_public_license_cleared_synthetic_allowed(self):
+        self.assertEqual(self.check(), "PUBLIC_SYNTHETIC_ELIGIBLE")
+
+    def test_private_source_never_uploaded_to_public_even_if_marked_cleared(self):
+        self.assertEqual(self.check(self.route(source_visibility="private")),
+                         "PRIVACY_BLOCK")
+
+    def test_private_source_uses_private_runner_only_when_quota_available(self):
+        route = self.route(source_visibility="private", runner_visibility="private",
+                           source_cleared=False)
+        self.assertEqual(self.check(route), "PRIVATE_QUOTA_HOLD")
+        self.assertEqual(self.check(route, private_actions_available=True),
+                         "PRIVATE_SYNTHETIC_ELIGIBLE")
+
+    def test_private_quota_cannot_be_assumed_true_from_truthy_string(self):
+        self.assertEqual(self.check(private_actions_available="yes"), "INVALID_ROUTE")
+
+    def test_public_source_must_not_waste_private_quota(self):
+        self.assertEqual(self.check(self.route(runner_visibility="private"),
+                                    private_actions_available=True),
+                         "USE_PUBLIC_RUNNER")
+
+    def test_uncleared_public_source_denied(self):
+        self.assertEqual(self.check(self.route(source_cleared=False)),
+                         "SOURCE_NOT_CLEARED")
+
+    def test_no_user_data_on_public_synthetic_runner(self):
+        self.assertEqual(self.check(self.route(contains_private_data=True)),
+                         "PRIVACY_BLOCK")
+
+    def test_no_secrets_in_generic_synthetic_route(self):
+        self.assertEqual(self.check(self.route(uses_secrets=True)), "SECRET_BLOCK")
+
+    def test_no_public_product_artifacts(self):
+        self.assertEqual(self.check(self.route(uploads_artifacts=True)),
+                         "PUBLICATION_BLOCK")
+
+    def test_no_paid_runner_even_for_public_source(self):
+        self.assertEqual(self.check(self.route(requires_paid_compute=True)),
+                         "PAID_PROVIDER_FORBIDDEN")
+
+    def test_no_non_synthetic_owner_fixtures(self):
+        self.assertEqual(self.check(self.route(synthetic_only=False)),
+                         "NON_SYNTHETIC_INPUT")
+
+    def test_exact_commit_still_required(self):
+        self.assertEqual(self.check(actual_head=NEW), "STALE_HEAD")
+
+    def test_invalid_source_head_rejected(self):
+        self.assertEqual(self.check(self.route(expected_head="not-a-sha")),
+                         "INVALID_ROUTE")
+
+    def test_boolean_flags_cannot_be_loosely_cast(self):
+        self.assertEqual(self.check(self.route(contains_private_data="false")),
+                         "INVALID_ROUTE")
+
+    def test_missing_route_is_invalid_not_a_public_go(self):
+        self.assertEqual(self.check(route=None, actual_head=NEW), "STALE_HEAD")
+        self.assertEqual(self.check(route=[]), "INVALID_ROUTE")
 
 
 if __name__ == "__main__":

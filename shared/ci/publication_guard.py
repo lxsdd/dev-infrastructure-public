@@ -25,11 +25,11 @@ ALIAS_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*[*&]", re.I)
 # Noncanonical YAML scalar/key forms can hide an enabled upload/release action
 # from the deliberately lightweight canonical `uses:` matcher. Reject them,
 # rather than incorrectly certifying a source-only workflow as safe.
-BLOCK_SCALAR_USES = re.compile(r"^\\s*(?:-\\s*)?uses:\\s*[>|]", re.I)
-TAGGED_USES = re.compile(r"^\\s*(?:-\\s*)?uses:\\s*!", re.I)
-QUOTED_USES_KEY = re.compile(r"^\\s*(?:-\\s*)?[\\\'\\\"]uses[\\\'\\\"]\\s*:", re.I)
-SPACED_USES_KEY = re.compile(r"^\\s*(?:-\\s*)?uses\\s+:", re.I)
-FLOW_STEP_MAPPING = re.compile(r"^\\s*-\\s*\\{")
+BLOCK_SCALAR_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*[>|]", re.I)
+TAGGED_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*!", re.I)
+QUOTED_USES_KEY = re.compile(r"""^\s*(?:-\s*)?['"]uses['"]\s*:""", re.I)
+SPACED_USES_KEY = re.compile(r"^\s*(?:-\s*)?uses\s+:", re.I)
+FLOW_STEP_MAPPING = re.compile(r"^\s*-\s*\{")
 
 
 def _level(row: str) -> int:

@@ -1,0 +1,57 @@
+name: Rich foobar runner GitHub original-installer regression
+
+on:
+  push:
+    branches:
+      - fix/foobar-github-mirror-rich-host-20261021
+    paths:
+      - .github/workflows/foobar-rich-github-mirror-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  rich-host:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve advanced host controls; parse and test pinned mirrored installer code
+        shell: pwsh
+        run: |
+          $hostSource=Get-Content -LiteralPath '.github/actions/foobar-host-smoke/host-smoke.ps1' -Raw
+          $actionSource=Get-Content -LiteralPath '.github/actions/foobar-host-smoke/action.yml' -Raw
+          foreach ($required in @('BeatportEditionProbe','OfflineClipboardTest','MultiFileCueProbe','RawTargetProbe','AuthorizedDiscogsProbe','RequiredControlIds','Get-FoobarPinnedInstaller','GITHUB_ORIGINAL_ASSET')) {
+            if (-not $hostSource.Contains($required)) { throw "Advanced rich-host feature was lost: $required" }
+          }
+          foreach ($required in @('beatport-edition-host-probe','offline-clipboard-test','multi-file-cue-host-probe','authorized-discogs-probe','context-fixture-format')) {
+            if (-not $actionSource.Contains($required)) { throw "Rich action input was lost: $required" }
+          }
+          foreach ($file in @('.github/actions/foobar-host-smoke/host-smoke.ps1','.github/actions/foobar-host-smoke/pinned-installer-cache.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path (Get-Location) $file), [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { throw ($errors | Out-String) }
+          }
+          if (-not $hostSource.Contains("ContextFixtureFormat = 'wav'") -or
+              -not $hostSource.Contains('HOST_CONTEXT_SYNTHETIC_MP3_UNCHANGED')) {
+            throw 'Precision CUE original MP3 runtime guard was lost'
+          }
+          . ./.github/actions/foobar-host-smoke/synthetic-wave.ps1
+          . ./.github/actions/foobar-host-smoke/synthetic-mp3.ps1
+          $fixture=Join-Path $env:RUNNER_TEMP 'rich-runner-mp3-fixture.mp3'
+          $before=New-FoobarSyntheticMp3 -Path $fixture
+          Assert-FoobarFixtureUnchanged -Path $fixture -Before $before
+          Write-Host 'RICH_RUNNER_MP3_SYNTHETIC_FIXTURE=PASS'
+          Write-Host 'RICH_FOOBAR_HOST_PROBE_CONTRACT=PASS'
+      - name: Start genuine isolated host using the GitHub original ${{ matrix.architecture }} installer
+        uses: ./.github/actions/foobar-host-smoke
+        with:
+          architecture: ${{ matrix.architecture }}
+      - name: Assert completed real host job
+        shell: pwsh
+        run: Write-Host 'RICH_HOST_GITHUB_MIRROR_${{ matrix.architecture }}=PASS'

@@ -13,6 +13,35 @@ This directory is an openly testable, **generic** implementation of the portfoli
 - All repository-specific state, exact private PR inventory and decisions remain in private `lxsdd/dev-infrastructure` Draft PR #20.
 - A green public Actions result qualifies this portable validation logic and the synthetic negative-test suite; it **does not** assert that the private portfolio itself ran on Actions or is fully semantically reviewed.
 
+## Coherent multi-workflow qualification (source-only)
+
+`qualification.py` composes the already-tested `scheduler.ci_decision`
+into one **fail-closed proof for several distinct GitHub workflow runs**.
+The caller specifies named roles, the exact required GitHub event
+(`push`, `pull_request`, or `workflow_dispatch`), workflow identity and
+required jobs. Each witness needs a unique, positive GitHub run ID, the
+**same exact 40-character source SHA**, a completed successful run,
+all expected completed successful jobs with positive *actual executed-step
+counts*, and the independently retrieved **empty artifact inventory**.
+An unrelated green PR, a missing push run, reused run ID, missing host job,
+zero-step billing admission, stale source SHA, absent artifact inventory,
+or unreviewed additional run cannot count as a successful bundle.
+
+The pure `qualification_bundle_decision(...)` returns a descriptive
+non-PASS result for these cases. Its **33 synthetic adversarial tests**
+cover positive and negative conditions. A genuine GitHub reader must fetch
+the run, its real jobs/steps, and the separate artifact list for every
+individual run before passing normalized records to this function. The
+function neither accesses GitHub nor guarantees that caller-provided
+records are genuine. It must not be treated as a release approval,
+private-host validation, binary build test, or license clearance.
+
+For the central free-public route, the required roles are the contract's
+independent push and PR runs plus the baseline PR run with both the
+synthetic safety and shared-source drift jobs. All are pinned to one
+reviewed commit; the private portfolio binding separately preserves its
+historical run and Git-blob provenance.
+
 ## Local source-only test
 
 ```sh

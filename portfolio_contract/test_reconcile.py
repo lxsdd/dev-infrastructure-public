@@ -219,6 +219,63 @@ class PortfolioReconciliationTests(unittest.TestCase):
         owners.append(entry(pr=25))
         self.assertEqual(self.check(owners)["status"], "DUPLICATE_IDENTITY")
 
+    def test_duplicate_pr_number_across_two_branches_denies_all(self):
+        owners = registered()
+        other = entry(pr=4)
+        other["branch"] = "feature/different"
+        owners.append(other)
+        self.assertEqual(self.check(owners)["status"], "DUPLICATE_IDENTITY")
+
+    def test_duplicate_observed_pr_number_across_branches_denies_all(self):
+        records = live()
+        extra = copy.deepcopy(records[1])
+        extra["branch"] = "feature/different"
+        records.append(extra)
+        self.assertEqual(self.check(observations=records)["status"],
+                         "DUPLICATE_IDENTITY")
+
+    def test_claimed_public_route_never_recorded_as_coherent(self):
+        owners = registered()
+        owners[1]["mode"] = "FREI"
+        owners[1]["claim"] = held()
+        result = self.check(owners, routes=published_route())
+        self.assertEqual(result["public_route"], "ROUTE_EVIDENCE_INCOMPLETE")
+
+    def test_unowned_public_route_never_recorded_as_coherent(self):
+        owners = registered()
+        owners[1]["mode"] = "BLOCKIERT"
+        result = self.check(owners, routes=published_route())
+        self.assertEqual(result["public_route"], "ROUTE_EVIDENCE_INCOMPLETE")
+
+    def test_malformed_prior_completion_not_silently_ignored(self):
+        owners = registered()
+        owners[1]["last_completed"] = "already qualified"
+        self.assertEqual(self.check(owners)["status"], "INVALID_INPUT")
+
+    def test_invalid_prior_completion_source_hash_denied(self):
+        owners = registered()
+        owners[1]["last_completed"] = {"new_head_sha": "unknown"}
+        self.assertEqual(self.check(owners)["status"], "INVALID_INPUT")
+
+    def test_composed_realistic_snapshot_fails_without_guessing_action(self):
+        owners = registered()
+        owners.append(entry("example/archived", 5, mode="BLOCKIERT"))
+        owners.append(entry("example/claimed", 6, mode="FREI", claim=held()))
+        owners.append(entry("example/stale", 7))
+        records = [observed(row) for row in owners]
+        records[0]["head_sha"] = B
+        records[2].update(state="closed", merged=True)
+        records[4]["head_sha"] = C
+        route = published_route(B)
+        result = self.check(owners, records, route)
+        self.assertEqual(result["status"], "NEEDS_RECONCILIATION")
+        self.assertEqual(result["public_route"], "ROUTE_HEAD_MISMATCH")
+        self.assertEqual(result["counts"]["CONTROL_SELF_REFERENCE_EXPECTED"], 1)
+        self.assertEqual(result["counts"]["ARCHIVED_CLOSED_OR_MERGED_PR"], 1)
+        self.assertEqual(result["counts"]["ACTIVE_CLAIM_NO_TAKEOVER"], 1)
+        self.assertEqual(result["counts"]["STALE_SOURCE_HEAD"], 1)
+        self.assertEqual(result["counts"]["CURRENT_OPEN_NO_CLAIM"], 1)
+
     def test_merged_open_inconsistent_github_snapshot_invalid(self):
         records = live()
         records[1]["merged"] = True

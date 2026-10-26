@@ -509,6 +509,16 @@ try {
           if(-not $import.WaitForExit(15000) -or $import.ExitCode -ne 0) {
             throw 'Official foobar refused disposable FLAC import.'
           }
+          # CLI /add returns before the portable host necessarily finishes
+          # asynchronous tag cache discovery. Opening Studio immediately
+          # captured an empty original TITLE on both architectures. Match the
+          # existing first synthetic WAV import's bounded metadata-settle
+          # interval before taking a NEW immutable physical-tag snapshot.
+          Start-Sleep -Seconds 2
+          $proc.Refresh()
+          if($proc.HasExited) {throw 'foobar exited during synthetic tagged FLAC import.'}
+          Assert-FoobarFixtureUnchanged -Path $tagged -Before $taggedBefore
+          Write-Host 'SYNTHETIC_DISCOGS_TAGGED_IMPORT_SETTLED=PASS (no fixture changes)'
           $leaf=($ContextCommand -split '/')[-1]
           $flacArg='/context_command:"'+$leaf+'" "'+$tagged+'"'
           $launch=Start-Process -FilePath $exe -WorkingDirectory $target -ArgumentList $flacArg -PassThru

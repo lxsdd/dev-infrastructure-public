@@ -526,11 +526,25 @@ try {
             throw 'Native Studio did not open on original-credit FLAC.'
           }
           $window=$fullWindow
-          # The prefilled, unedited title proves the provider uses original
-          # tags; editing the search text would disable auto ARTIST/VERSION.
-          if([FoobarHostWindow]::Text($window,291) -ne '1000 Years') {
+          # Wait boundedly for foobar's queued WM_INIT/dialog refresh on
+          # the new file. Opening the HWND is NOT proof of completed search
+          # text initialization, and the old immediate check raced it.
+          # Do not set query text: that would bypass the original ARTIST/
+          # VERSION auto-search source identity we explicitly test.
+          $prefilled=''
+          for($paint=0;$paint -lt 20;$paint++) {
+            $prefilled=[FoobarHostWindow]::Text($window,291)
+            if($prefilled -ceq '1000 Years') {break}
+            $proc.Refresh()
+            if($proc.HasExited) {throw 'foobar exited while reading original tagged TITLE.'}
+            Start-Sleep -Milliseconds 250
+          }
+          if($prefilled -cne '1000 Years') {
+            $previewClass=if([string]::IsNullOrEmpty($prefilled)){'EMPTY'}else{'DIFFERENT'}
+            Write-Host "SYNTHETIC_DISCOGS_ORIGINAL_TITLE_DIAGNOSTIC=$previewClass length=$($prefilled.Length)"
             throw 'Original TITLE was not prefilled from the tagged physical FLAC.'
           }
+          Write-Host 'SYNTHETIC_DISCOGS_ORIGINAL_TITLE_PREFILL=PASS (unchanged physical TITLE)'
           if(-not [FoobarHostWindow]::SelectProvider($window,299,1) -or
              -not [FoobarHostWindow]::SetText($window,301,$discogsQaToken) -or
              -not [FoobarHostWindow]::Click($window,292)) {

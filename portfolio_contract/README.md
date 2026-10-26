@@ -43,6 +43,58 @@ synthetic safety and shared-source drift jobs. All are pinned to one
 reviewed commit; the private portfolio binding separately preserves its
 historical run and Git-blob provenance.
 
+## Read-only multi-project lifecycle reconciliation
+
+`reconcile.py` implements a complete **offline, read-only three-input
+reconciliation** so independent projects cannot be taken over on the strength
+of an outdated ownership register or historically green CI. It accepts:
+
+1. A privately held owner-branch/PR assignment ledger containing
+   `repository`, `branch`, `pr`, `head_sha`, `mode`, `claim`, and any
+   previous `last_completed` record.
+2. An **independently acquired, current** GitHub PR snapshot containing the
+   matching identity, `head_sha`, `state` (`open`/`closed`) and boolean
+   `merged`. Reusing the ledger's own SHA does not count as fresh evidence.
+3. The privately held CI routes registry; its public contract route must
+   reference the **same** current SHA as both the independent PR observation
+   and the private CHAT assignment. Prior successful runs remain historical;
+   they cannot close a current-source mismatch.
+
+One atomic verification produces per-branch classifications, counts, and
+a separate route result. It detects source drift, closed/merged PRs, orphaned
+claims, conflicting claim and ledger heads, ambiguous/duplicate PR identities,
+missing observations, invalid hash and run-ID types, and unqualified source
+movement on FREE branches. Even expired claims remain **held** pending human/
+owner reconciliation; only a BLOCKIERT+unclaimed merged PR is considered
+archived. A control PR may be explicitly identified as self-referential: its
+HEAD necessarily advances when the register *inside that same branch* changes,
+and only that single CHAT/no-claim identity gets the exception.
+
+Run the offline CLI **only in a private owner-controlled environment**, never
+inside the public GitHub workflow with real private records:
+
+```sh
+python3 portfolio_contract/reconcile.py \
+  --ownership /private/ownership.json \
+  --live-prs /private/current-github-prs.json \
+  --routes /private/runner-routes.json \
+  --control-repo example/control --control-branch feature/draft --control-pr 3
+```
+
+The script prints the local JSON classification to standard output and exits
+0 only if every observed record is consistent **and** its recorded public
+route is coherent; exit 1 denotes outstanding reconciliation and exit 2
+denotes unreadable/malformed inputs. It does not query GitHub, acquire a CAS
+claim, modify JSON or push code. Output contains repository and branch labels,
+so **keep it private**. It never claims the historical public CI records came
+from genuine GitHub API calls; exact-run jobs, named test-step execution and
+artifact inventories still require the independent GitHub verification path in
+`qualification.py`. The matching input examples in public CI use only
+synthetic `example/...` identities and artificial SHAs. **58 dedicated
+positive/negative synthetic tests** cover this lifecycle and the executable
+offline CLI. A coherent report is not authority to change product code or to
+merge/close/release anything.
+
 ## Local source-only test
 
 ```sh

@@ -42,3 +42,14 @@ jobs:
           language: dotnet
           dotnet-project: tests/portable-fixtures/dotnet/PortableFixture.csproj
           dotnet-mode: selftest
+  python-positive-negative:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/portable-core
+        with:
+          language: python
+          python-scripts: tests/portable-fixtures/python/contract_fixture.py

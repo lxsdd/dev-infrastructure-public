@@ -9,7 +9,7 @@ import re
 
 from scheduler import ci_decision
 
-SHA = re.compile(r"[0-9a-f]{40}\\Z")
+SHA = re.compile(r"[0-9a-f]{40}\Z")
 EVENTS = frozenset(("push", "pull_request", "workflow_dispatch"))
 
 

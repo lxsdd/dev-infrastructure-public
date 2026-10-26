@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(portable_contract_fixture LANGUAGES CXX)
+enable_testing()
+add_executable(portable_contract fixture.cpp)
+target_compile_features(portable_contract PRIVATE cxx_std_20)
+add_test(NAME valid_boundary_and_invalid_inputs COMMAND portable_contract --checks)
+add_test(NAME expected_nonzero_must_fail COMMAND portable_contract --expected-nonzero)
+set_tests_properties(expected_nonzero_must_fail PROPERTIES WILL_FAIL TRUE)

@@ -48,6 +48,12 @@ def _owned_entry(item):
             item.get("mode") not in MODES or "claim" not in item):
         return None
     claim = item["claim"]
+    previous = item.get("last_completed")
+    if (previous is not None and
+            (not isinstance(previous, Mapping) or
+             not isinstance(previous.get("new_head_sha"), str) or
+             not SHA.fullmatch(previous["new_head_sha"]))):
+        return None
     if claim is not None:
         if (not isinstance(claim, Mapping) or
                 claim.get("status") != "ACTIVE" or
@@ -91,7 +97,8 @@ def _route_status(routes, owners, observations):
         return "ROUTE_PR_NOT_OPEN"
     pair = row.get("run_ids")
     baseline = row.get("public_baseline_ci")
-    if (not isinstance(pair, list) or len(pair) != 2 or
+    if (owner.get("mode") != "CHAT" or owner.get("claim") is not None or
+            not isinstance(pair, list) or len(pair) != 2 or
             any(type(n) is not int or n <= 0 for n in pair) or
             pair[0] == pair[1] or
             ownership.get("public_contract_run") != pair[-1] or
@@ -126,17 +133,20 @@ def reconcile_portfolio(assignments, live_prs, *, routes=None,
     control = tuple(control_identity) if control_identity is not None else None
     owners, live = {}, {}
     owner_branches, live_branches = set(), set()
-    for entries, result, branches, validate in (
-            (assignments, owners, owner_branches, _owned_entry),
-            (live_prs, live, live_branches, _observed_pr)):
+    owner_prs, live_pr_numbers = set(), set()
+    for entries, result, branches, pr_numbers, validate in (
+            (assignments, owners, owner_branches, owner_prs, _owned_entry),
+            (live_prs, live, live_branches, live_pr_numbers, _observed_pr)):
         for entry in entries:
             key = validate(entry)
             if key is None:
                 return {"status": "INVALID_INPUT"}
-            if key in result or key[:2] in branches:
+            if (key in result or key[:2] in branches or
+                    (key[0], key[2]) in pr_numbers):
                 return {"status": "DUPLICATE_IDENTITY"}
             result[key] = entry
             branches.add(key[:2])
+            pr_numbers.add((key[0], key[2]))
     extra = sorted(set(live) - set(owners))
     if extra:
         return {"status": "UNREGISTERED_LIVE_PR", "identities": extra}

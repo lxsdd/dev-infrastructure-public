@@ -21,13 +21,17 @@ def qualification_bundle_decision(witnesses, *, expected_head,
     required_runs:
       [{"role": "portfolio_push", "event": "push",
         "workflow": "Public portfolio preservation contract",
-        "required_jobs": ["contract"]}, ...]
+        "required_jobs": ["contract"],
+        "required_steps": {"contract": ["Run actual regression suite"]}}, ...]
     witnesses:
       [{"role": "portfolio_push", "run_id": 100, "event": "push",
+        "repository": "example/public-ci",
         "workflow": "...", "head_sha": "a"*40,
         "status": "completed", "conclusion": "success",
         "jobs": [{"name": "contract", "status": "completed",
-                  "conclusion": "success", "executed_steps": 5}],
+                  "conclusion": "success", "executed_steps": 5,
+                  "steps": [{"name": "Run actual regression suite",
+                             "status": "completed", "conclusion": "success"}]}],
         "artifacts": []}, ...]
 
     A PASS proves only internally consistent caller-supplied evidence. It does

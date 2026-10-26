@@ -526,6 +526,13 @@ try {
             throw 'Native Studio did not open on original-credit FLAC.'
           }
           $window=$fullWindow
+          # A modeless Studio may restore the last saved page. The query
+          # is populated only when Find & compare is really activated.
+          # Exercise the actual native tab keyboard path, never inject TITLE.
+          if(-not [FoobarHostWindow]::SwitchTab($window,270,0)) {
+            throw 'Native tagged source could not activate Find & compare tab.'
+          }
+          Write-Host 'SYNTHETIC_DISCOGS_ORIGINAL_FIND_TAB=PASS (real native keyboard activation)'
           # Wait boundedly for foobar's queued WM_INIT/dialog refresh on
           # the new file. Opening the HWND is NOT proof of completed search
           # text initialization, and the old immediate check raced it.

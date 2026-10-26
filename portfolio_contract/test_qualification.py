@@ -243,6 +243,41 @@ class QualificationBundleTests(unittest.TestCase):
         rows[0]["jobs"][0]["steps"].append(dict(rows[0]["jobs"][0]["steps"][0]))
         self.assertEqual(self.check(rows), "AMBIGUOUS")
 
+    def test_missing_required_steps_contract_denies_pass(self):
+        requirements_set = requirements()
+        del requirements_set[0]["required_steps"]
+        self.assertEqual(self.check(req=requirements_set), "INVALID_EXPECTATION")
+
+    def test_empty_required_steps_dict_denies_pass(self):
+        requirements_set = requirements()
+        requirements_set[0]["required_steps"] = {}
+        self.assertEqual(self.check(req=requirements_set), "INVALID_EXPECTATION")
+
+    def test_missing_one_of_two_required_job_step_definitions_denies_pass(self):
+        requirements_set = requirements()
+        requirements_set[2]["required_steps"].pop("shared-source-drift")
+        self.assertEqual(self.check(req=requirements_set), "INVALID_EXPECTATION")
+
+    def test_empty_step_list_does_not_qualify_successful_job(self):
+        requirements_set = requirements()
+        requirements_set[1]["required_steps"] = {"contract": []}
+        self.assertEqual(self.check(req=requirements_set), "INVALID_EXPECTATION")
+
+    def test_steps_require_named_tests_for_every_job_even_if_setup_is_green(self):
+        requirements_set = requirements()
+        requirements_set[2]["required_steps"] = {
+            "synthetic-contract": ["real-test"],
+            "shared-source-drift": [],
+        }
+        self.assertEqual(self.check(req=requirements_set), "INVALID_EXPECTATION")
+
+    def test_named_successful_step_is_still_required_when_other_step_succeeds(self):
+        rows = witnesses()
+        rows[2]["jobs"][1]["steps"].append({
+            "name": "setup", "status": "completed", "conclusion": "success"})
+        rows[2]["jobs"][1]["steps"][0]["conclusion"] = "skipped"
+        self.assertEqual(self.check(rows), "STEPS_NOT_VERIFIED")
+
     def test_bad_required_steps_contract_denies_pass(self):
         requirements_set = requirements()
         requirements_set[0]["required_steps"] = {"not-a-required-job": ["real-test"]}

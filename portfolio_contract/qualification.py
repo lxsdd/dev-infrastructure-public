@@ -59,9 +59,12 @@ def qualification_bundle_decision(witnesses, *, expected_head,
                 any(not isinstance(name, str) or not name for name in names) or
                 len(names) != len(set(names))):
             return "INVALID_EXPECTATION"
-        required_steps = spec.get("required_steps", {})
+        required_steps = spec.get("required_steps")
+        # Every required job must name an actual substantive test step.
+        # A job's setup/checkout/post steps are never sufficient qualification.
         if (not isinstance(required_steps, Mapping) or
-                any(not isinstance(job_name, str) or job_name not in names or
+                set(required_steps) != set(names) or
+                any(not isinstance(job_name, str) or
                     not isinstance(step_names, (list, tuple)) or not step_names or
                     any(not isinstance(v, str) or not v for v in step_names) or
                     len(step_names) != len(set(step_names))

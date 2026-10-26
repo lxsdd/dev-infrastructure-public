@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from reconcile import reconcile_portfolio
+from reconcile import reconcile_portfolio, main
 
 A = "a" * 40
 B = "b" * 40
@@ -413,6 +413,54 @@ class PortfolioReconciliationTests(unittest.TestCase):
         baseline = copy.deepcopy((owners, observations, route))
         self.check(owners, observations, route)
         self.assertEqual((owners, observations, route), baseline)
+
+
+    def _run_cli(self, *, wrong_source=False, omit_file=False):
+        import contextlib
+        import io
+        import json
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ownership, observations, routes = registered(), live(), published_route()
+            if wrong_source:
+                routes["routes"][0]["head_sha"] = B
+            for name, payload in (("ownership.json", {"assignments": ownership}),
+                                  ("observations.json", observations),
+                                  ("routes.json", routes)):
+                (root / name).write_text(json.dumps(payload), encoding="utf-8")
+            args = ["--ownership", str(root / "ownership.json"),
+                    "--live-prs", str(root / "observations.json"),
+                    "--routes", str(root / ("not-found.json" if omit_file else
+                                              "routes.json")),
+                    "--control-repo", CTRL[0],
+                    "--control-branch", CTRL[1],
+                    "--control-pr", str(CTRL[2])]
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main(args)
+            return code, out.getvalue(), err.getvalue()
+
+    def test_offline_cli_complete_synthetic_evidence_exits_zero(self):
+        code, output, err = self._run_cli()
+        self.assertEqual(code, 0)
+        self.assertIn("RECORDED_STATE_CONSISTENT_NOT_AUTHORITY_TO_WRITE",
+                      output)
+        self.assertEqual(err, "")
+
+    def test_offline_cli_route_drift_fails_with_details(self):
+        code, output, err = self._run_cli(wrong_source=True)
+        self.assertEqual(code, 1)
+        self.assertIn("ROUTE_HEAD_MISMATCH", output)
+        self.assertEqual(err, "")
+
+    def test_offline_cli_missing_file_is_not_verified(self):
+        code, output, err = self._run_cli(omit_file=True)
+        self.assertEqual(code, 2)
+        self.assertIn("NOT_VERIFIED", err)
+        self.assertEqual(output, "")
+
 
 
 if __name__ == "__main__":

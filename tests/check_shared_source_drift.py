@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from audit_shared_source_drift import (  # noqa: E402
-    REGISTRY, check_registry, git_blob_sha1, validate_registry,
+    REGISTRY, STAGED_ROLLOUT, check_registry, check_staged_rollout,
+    git_blob_sha1, validate_registry, validate_staged_rollout,
 )
 
 
@@ -81,6 +82,97 @@ def main():
     mutated = copy.deepcopy(original)
     mutated["contracts"][1]["id"] = mutated["contracts"][0]["id"]
     rejects(mutated)
+
+    staged = json.loads(STAGED_ROLLOUT.read_text(encoding="utf-8"))
+    validate_staged_rollout(staged)
+    sample = copy.deepcopy(staged)
+    source = b"synthetic-qualified-shared-guard"
+    sample["owner"]["sha1"] = git_blob_sha1(source)
+    for adopter in sample["adoptions"]:
+        adopter["sha1"] = sample["owner"]["sha1"]
+    owner = sample["owner"]
+    adoption = sample["adoptions"][0]
+    pin = {
+        "source_repo": owner["repo"],
+        "source_commit": owner["commit"],
+        "source_path": owner["path"],
+        "source_git_blob_sha1": owner["sha1"],
+    }
+    objects = {
+        (owner["repo"], owner["commit"], owner["path"]): source,
+        (adoption["repo"], adoption["commit"], adoption["path"]): source,
+        (adoption["repo"], adoption["commit"], adoption["pin_path"]):
+            json.dumps(pin).encode("utf-8"),
+    }
+
+    def staged_fetch(repo, commit, path):
+        return objects[(repo, commit, path)]
+
+    count, errors = check_staged_rollout(sample, staged_fetch)
+    assert count == 3 and not errors, (count, errors)
+
+    drift = dict(objects)
+    drift[(adoption["repo"], adoption["commit"], adoption["path"])] += b"!"
+    _, errors = check_staged_rollout(
+        sample, lambda repo, commit, path: drift[(repo, commit, path)])
+    assert len(errors) == 1 and "STAGED_SOURCE_DRIFT" in errors[0], errors
+
+    drift = dict(objects)
+    drift[(owner["repo"], owner["commit"], owner["path"])] += b"!"
+    _, errors = check_staged_rollout(
+        sample, lambda repo, commit, path: drift[(repo, commit, path)])
+    assert len(errors) == 1 and "STAGED_SOURCE_DRIFT" in errors[0], errors
+
+    broken_pin = dict(pin, source_commit="0" * 40)
+    drift = dict(objects)
+    drift[(adoption["repo"], adoption["commit"], adoption["pin_path"])] = (
+        json.dumps(broken_pin).encode("utf-8"))
+    _, errors = check_staged_rollout(
+        sample, lambda repo, commit, path: drift[(repo, commit, path)])
+    assert len(errors) == 1 and "STAGED_PIN_MISMATCH" in errors[0], errors
+
+    drift = dict(objects)
+    del drift[(adoption["repo"], adoption["commit"], adoption["pin_path"])]
+    _, errors = check_staged_rollout(
+        sample, lambda repo, commit, path: drift.get((repo, commit, path)))
+    assert len(errors) == 1 and "STAGED_PIN_NOT_VERIFIED" in errors[0], errors
+
+    for field, value in (
+        ("repo", "private/source-repository"),
+        ("commit", "main"),
+        ("path", "../private-source"),
+    ):
+        mutated = copy.deepcopy(sample)
+        mutated["adoptions"][0][field] = value
+        try:
+            validate_staged_rollout(mutated)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid staged public ref accepted: " + field)
+    for mutation in ("duplicate", "missing_pin", "self_pin", "wrong_source",
+                     "wrong_owner", "empty_adopters"):
+        mutated = copy.deepcopy(sample)
+        adopter = mutated["adoptions"][0]
+        if mutation == "duplicate":
+            mutated["adoptions"].append(copy.deepcopy(adopter))
+        elif mutation == "missing_pin":
+            adopter.pop("pin_path")
+        elif mutation == "self_pin":
+            adopter["pin_path"] = adopter["path"]
+        elif mutation == "wrong_source":
+            adopter["sha1"] = "f" * 40
+        elif mutation == "wrong_owner":
+            mutated["owner"]["repo"] = "lxsdd/dj-library-public"
+        else:
+            mutated["adoptions"] = []
+        try:
+            validate_staged_rollout(mutated)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe staged rollout accepted: " + mutation)
+    print("PASS: immutable staged guard source chain 3 objects and 13 adversarial classes")
 
     print("PASS: 13 public targets, real Git blob header and 10 adversarial classes")
 

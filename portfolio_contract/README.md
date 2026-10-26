@@ -20,15 +20,16 @@ into one **fail-closed proof for several distinct GitHub workflow runs**.
 The caller specifies named roles, the exact required GitHub event
 (`push`, `pull_request`, or `workflow_dispatch`), workflow identity and
 required jobs. Each witness needs a unique, positive GitHub run ID, the
-**same exact 40-character source SHA**, a completed successful run,
+**same exact 40-character source SHA and repository identity**, a completed successful run,
 all expected completed successful jobs with positive *actual executed-step
-counts*, and the independently retrieved **empty artifact inventory**.
+counts*, explicit success for each **required named test step**, and the independently
+retrieved **empty artifact inventory**.
 An unrelated green PR, a missing push run, reused run ID, missing host job,
 zero-step billing admission, stale source SHA, absent artifact inventory,
 or unreviewed additional run cannot count as a successful bundle.
 
 The pure `qualification_bundle_decision(...)` returns a descriptive
-non-PASS result for these cases. Its **33 synthetic adversarial tests**
+non-PASS result for these cases. Its **43 synthetic adversarial tests**
 cover positive and negative conditions. A genuine GitHub reader must fetch
 the run, its real jobs/steps, and the separate artifact list for every
 individual run before passing normalized records to this function. The

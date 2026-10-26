@@ -1,26 +1,20 @@
 name: Portable Core v1
 
-# A reusable, source-only, secret-free Linux preflight. The caller repository
-# owns the tests, production builds, Windows/foobar/Android and release gates.
 on:
   workflow_call:
     inputs:
       language:
-        description: "cmake, dotnet or gradle"
         type: string
         required: true
       source-directory:
-        description: "CMake source directory (relative to caller checkout)"
         type: string
         default: "."
       dotnet-project:
-        description: "Explicit Linux-compatible test project, not a WPF app"
         type: string
         default: ""
       dotnet-mode:
-        description: "test (real test SDK project) or selftest (executable)"
         type: string
-        default: "test"
+        default: test
       dotnet-version:
         type: string
         default: "10.0.x"
@@ -31,151 +25,108 @@ on:
         type: string
         default: "."
       python-test-patterns:
-        description: "Optional comma-separated unittest discover filename patterns"
         type: string
         default: ""
       python-scripts:
-        description: "Optional comma-separated repository-local Python contracts"
         type: string
         default: ""
+
 permissions:
   contents: read
+
 jobs:
   portable:
-    name: Portable ${{ inputs.language }} / source SHA
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    permissions:
-      contents: read
-    env:
-      PORTABLE_LANGUAGE: ${{ inputs.language }}
-      PORTABLE_SOURCE: ${{ inputs.source-directory }}
-      PORTABLE_DOTNET_PROJECT: ${{ inputs.dotnet-project }}
-      PORTABLE_DOTNET_MODE: ${{ inputs.dotnet-mode }}
-      PORTABLE_GRADLE_DIR: ${{ inputs.gradle-directory }}
-      PORTABLE_PYTHON_PATTERNS: ${{ inputs.python-test-patterns }}
-      PORTABLE_PYTHON_SCRIPTS: ${{ inputs.python-scripts }}
     steps:
-      - name: Checkout caller at exact event commit
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify SHA and reject invalid runner/test settings
+      - name: Assert checkout is exact event SHA
         shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          case "$PORTABLE_LANGUAGE" in cmake|dotnet|gradle) ;; *) echo "::error::Unsupported portable language"; exit 2 ;; esac
-          for p in "$PORTABLE_SOURCE" "$PORTABLE_GRADLE_DIR"; do
-            case "$p" in /*|../*|*/../*|*/..|*\\*) echo "::error::Unsafe relative directory"; exit 2;; esac
-          done
-          if [ -n "$PORTABLE_DOTNET_PROJECT" ]; then
-            case "$PORTABLE_DOTNET_PROJECT" in /*|../*|*/../*|*/..|*\\*|*.sln) echo "::error::Unsafe test project"; exit 2;; esac
-          fi
-          case "$PORTABLE_DOTNET_MODE" in test|selftest) ;; *) echo "::error::Invalid dotnet-mode"; exit 2;; esac
-          printf 'PORTABLE_SOURCE_SHA=%s\nPORTABLE_LANGUAGE=%s\n' "$GITHUB_SHA" "$PORTABLE_LANGUAGE"
-      - name: Restore CMake compiler cache
-        if: inputs.language == 'cmake'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: portable-cpp-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}-${{ github.sha }}
-          restore-keys: |
-            portable-cpp-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}-
-      - name: Run C++ configure, build and all CTest regressions
-        if: inputs.language == 'cmake'
-        shell: bash
-        run: |
-          set -euo pipefail
-          extra=()
-          if command -v ccache >/dev/null 2>&1; then
-            extra+=("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache")
-          fi
-          cmake -S "$PORTABLE_SOURCE" -B "$RUNNER_TEMP/portable-cpp-build" -DCMAKE_BUILD_TYPE=Release "${extra[@]}"
-          cmake --build "$RUNNER_TEMP/portable-cpp-build" --parallel 2
-          ctest --test-dir "$RUNNER_TEMP/portable-cpp-build" -C Release --output-on-failure --no-tests=error
-      - name: Install pinned .NET major SDK for headless tests
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-dotnet@v4
         if: inputs.language == 'dotnet'
-        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
-      - name: Restore .NET packages cache
-        if: inputs.language == 'dotnet'
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: portable-dotnet-${{ runner.os }}-${{ inputs.dotnet-version }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json', '**/global.json') }}
-      - name: Run Linux-compatible .NET tests or explicit executable self-tests
-        if: inputs.language == 'dotnet'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$PORTABLE_DOTNET_PROJECT" && test -f "$PORTABLE_DOTNET_PROJECT"
-          case "$PORTABLE_DOTNET_PROJECT" in *.csproj) ;; *) echo "::error::Require explicit csproj"; exit 2 ;; esac
-          dotnet restore "$PORTABLE_DOTNET_PROJECT"
-          if [ "$PORTABLE_DOTNET_MODE" = test ]; then
-            dotnet test "$PORTABLE_DOTNET_PROJECT" -c Release --no-restore --verbosity normal
-          else
-            dotnet run --project "$PORTABLE_DOTNET_PROJECT" -c Release --no-restore
-          fi
-      - name: Install JDK for Gradle tests
+      - uses: actions/setup-java@v4
         if: inputs.language == 'gradle'
-        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ inputs.java-version }}
-      - name: Restore Gradle cache
-        if: inputs.language == 'gradle'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: portable-gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/*.gradle.kts', '**/gradle-wrapper.properties') }}
-      - name: Run Gradle JVM unit tests (never Android/device tests)
-        if: inputs.language == 'gradle'
+      - name: Build and test portable C++
+        if: inputs.language == 'cmake'
         shell: bash
+        env:
+          SOURCE_DIR: ${{ inputs.source-directory }}
         run: |
           set -euo pipefail
-          test -f "$PORTABLE_GRADLE_DIR/gradlew"
-          bash "$PORTABLE_GRADLE_DIR/gradlew" --no-daemon --project-dir "$PORTABLE_GRADLE_DIR" test
-      - name: Run optional Python unittest regression patterns
+          case "$SOURCE_DIR" in /*|../*|*/../*|*/..) exit 2;; esac
+          cmake -S "$SOURCE_DIR" -B "$RUNNER_TEMP/portable-cpp" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/portable-cpp" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/portable-cpp" -C Release --output-on-failure --no-tests=error
+      - name: Build and test portable .NET
+        if: inputs.language == 'dotnet'
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.dotnet-project }}
+          MODE: ${{ inputs.dotnet-mode }}
+        run: |
+          set -euo pipefail
+          case "$PROJECT" in /*|../*|*/../*|*/..|*.sln) exit 2;; esac
+          test -f "$PROJECT"
+          case "$PROJECT" in *.csproj) ;; *) exit 2;; esac
+          dotnet restore "$PROJECT"
+          case "$MODE" in
+            test) dotnet test "$PROJECT" -c Release --no-restore --verbosity normal ;;
+            selftest) dotnet run --project "$PROJECT" -c Release --no-restore ;;
+            *) exit 2 ;;
+          esac
+      - name: Test portable Gradle JVM project
+        if: inputs.language == 'gradle'
+        shell: bash
+        env:
+          PROJECT_DIR: ${{ inputs.gradle-directory }}
+        run: |
+          set -euo pipefail
+          case "$PROJECT_DIR" in /*|../*|*/../*|*/..) exit 2;; esac
+          test -f "$PROJECT_DIR/gradlew"
+          bash "$PROJECT_DIR/gradlew" --no-daemon --project-dir "$PROJECT_DIR" test
+      - name: Python unittest fixtures
         if: inputs.python-test-patterns != ''
         shell: bash
+        env:
+          PATTERNS: ${{ inputs.python-test-patterns }}
         run: |
           set -euo pipefail
-          IFS=',' read -r -a patterns <<< "$PORTABLE_PYTHON_PATTERNS"
+          IFS=',' read -r -a patterns <<< "$PATTERNS"
           for pattern in "${patterns[@]}"; do
             test -n "$pattern"
-            case "$pattern" in */*|*\\*|*..*) echo "::error::Invalid unittest filename pattern"; exit 2;; esac
+            case "$pattern" in */*|*..*) exit 2;; esac
             python3 -m unittest discover -s tests -p "$pattern" -v
           done
-      - name: Run optional explicit Python contract scripts
+      - name: Python scripts
         if: inputs.python-scripts != ''
         shell: bash
+        env:
+          SCRIPTS: ${{ inputs.python-scripts }}
         run: |
           set -euo pipefail
-          IFS=',' read -r -a scripts <<< "$PORTABLE_PYTHON_SCRIPTS"
+          IFS=',' read -r -a scripts <<< "$SCRIPTS"
           for script in "${scripts[@]}"; do
-            case "$script" in
-              /*|../*|*/../*|*/..|*\\*) echo "::error::Unsafe script path"; exit 2;;
-              *.py) ;;
-              *) echo "::error::Only repository-local Python files are allowed"; exit 2;;
-            esac
+            case "$script" in /*|../*|*/../*|*/..|*\\*) exit 2;; *.py) ;; *) exit 2;; esac
             test -f "$script"
             python3 "$script"
           done
-      - name: Record exact-SHA gate and result
+      - name: Source SHA and result
         if: always()
         shell: bash
         env:
-          GATE_RESULT: ${{ job.status }}
+          LANGUAGE: ${{ inputs.language }}
+          STATUS: ${{ job.status }}
         run: |
-          {
-            echo "### Portable Core v1"
-            echo "Caller repository: \`$GITHUB_REPOSITORY\`"
-            echo "Source SHA: \`$GITHUB_SHA\`"
-            echo "Language: \`$PORTABLE_LANGUAGE\`"
-            echo "Result: **$GATE_RESULT**"
-            echo "Scope: headless source tests only; no host, UI, database or device qualification."
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "### Portable Core v1" >> "$GITHUB_STEP_SUMMARY"
+          echo "Caller: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Language: $LANGUAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Status: $STATUS (headless only)" >> "$GITHUB_STEP_SUMMARY"

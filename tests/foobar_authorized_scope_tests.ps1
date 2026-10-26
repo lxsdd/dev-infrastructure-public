@@ -8,8 +8,8 @@ $feature='feature/online-metadata-discovery-foundation-20261009'
 $sha='0123456789abcdef0123456789abcdef01234567'
 $wrong='1123456789abcdef0123456789abcdef01234567'
 $temp=Join-Path $env:RUNNER_TEMP ('studio-discogs-policy-'+[guid]::NewGuid().ToString('N'))
-function Assert-Scope([bool]$expected,[string]$name,[hashtable]$args){
-    $result=Test-Fb2kAuthorizedDiscogsContext @args
+function Assert-Scope([bool]$expected,[string]$name,[hashtable]$context){
+    $result=Test-Fb2kAuthorizedDiscogsContext @context
     if($result -ne $expected){throw "AUTHORIZED_SCOPE_CONTRACT=FAIL case=$name"}
 }
 function With-Changes([hashtable]$original,[hashtable]$changes) {

@@ -1,0 +1,151 @@
+name: Portable Core v1
+description: Source-only Linux preflight for independently buildable C++/.NET/JVM core tests
+inputs:
+  language:
+    description: cmake, dotnet or gradle
+    required: true
+  source-directory:
+    description: CMake source directory relative to caller checkout
+    default: .
+  dotnet-project:
+    description: Linux-compatible test project, not a WindowsDesktop/WPF app
+    default: ''
+  dotnet-mode:
+    description: test or selftest (explicit executable test harness)
+    default: test
+  dotnet-version:
+    default: '10.0.x'
+  java-version:
+    default: '21'
+  gradle-directory:
+    default: .
+  python-test-patterns:
+    description: Comma-separated unittest discovery patterns
+    default: ''
+  python-scripts:
+    description: Comma-separated repository-local Python guard scripts
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Validate source SHA and adapter
+      shell: bash
+      env:
+        LANGUAGE: ${{ inputs.language }}
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+        case "$LANGUAGE" in cmake|dotnet|gradle) ;; *) echo "::error::Unsupported adapter"; exit 2;; esac
+        echo "PORTABLE_CHECKOUT_SHA=$(git rev-parse HEAD)"
+    - name: Restore C++ compiler cache
+      if: inputs.language == 'cmake'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ccache
+        key: portable-v1-cpp-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}-${{ github.sha }}
+        restore-keys: |
+          portable-v1-cpp-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}-
+    - name: Run CMake and all CTest tests
+      if: inputs.language == 'cmake'
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source-directory }}
+      run: |
+        set -euo pipefail
+        case "$SOURCE" in /*|../*|*/../*|*/..) echo "::error::Unsafe CMake directory"; exit 2;; esac
+        args=()
+        if command -v ccache >/dev/null 2>&1; then args+=(-DCMAKE_CXX_COMPILER_LAUNCHER=ccache); fi
+        cmake -S "$SOURCE" -B "$RUNNER_TEMP/portable-v1-cpp" -DCMAKE_BUILD_TYPE=Release "${args[@]}"
+        cmake --build "$RUNNER_TEMP/portable-v1-cpp" --parallel 2
+        ctest --test-dir "$RUNNER_TEMP/portable-v1-cpp" -C Release --output-on-failure --no-tests=error
+    - name: Setup .NET SDK
+      if: inputs.language == 'dotnet'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+    - name: Restore NuGet cache
+      if: inputs.language == 'dotnet'
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: portable-v1-dotnet-${{ runner.os }}-${{ inputs.dotnet-version }}-${{ hashFiles('**/*.csproj', '**/packages.lock.json', '**/global.json') }}
+    - name: Run .NET headless tests
+      if: inputs.language == 'dotnet'
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.dotnet-project }}
+        MODE: ${{ inputs.dotnet-mode }}
+      run: |
+        set -euo pipefail
+        case "$PROJECT" in /*|../*|*/../*|*/..|*\\*) exit 2;; *.csproj) ;; *) exit 2;; esac
+        test -f "$PROJECT"
+        dotnet restore "$PROJECT"
+        case "$MODE" in
+          test) dotnet test "$PROJECT" -c Release --no-restore --verbosity normal ;;
+          selftest) dotnet run --project "$PROJECT" -c Release --no-restore ;;
+          *) echo "::error::Unsupported .NET test mode"; exit 2;;
+        esac
+    - name: Setup JDK
+      if: inputs.language == 'gradle'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+    - name: Restore Gradle cache
+      if: inputs.language == 'gradle'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: portable-v1-gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+    - name: Run Gradle JVM tests
+      if: inputs.language == 'gradle'
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.gradle-directory }}
+      run: |
+        set -euo pipefail
+        case "$PROJECT" in /*|../*|*/../*|*/..) exit 2;; esac
+        test -f "$PROJECT/gradlew"
+        bash "$PROJECT/gradlew" --no-daemon --project-dir "$PROJECT" test
+    - name: Run Python unittest regression patterns
+      if: inputs.python-test-patterns != ''
+      shell: bash
+      env:
+        PATTERNS: ${{ inputs.python-test-patterns }}
+      run: |
+        set -euo pipefail
+        IFS=',' read -r -a patterns <<< "$PATTERNS"
+        for pattern in "${patterns[@]}"; do
+          test -n "$pattern"
+          case "$pattern" in */*|*..*|*\\*) exit 2;; esac
+          python3 -m unittest discover -s tests -p "$pattern" -v
+        done
+    - name: Run Python repository-local guards
+      if: inputs.python-scripts != ''
+      shell: bash
+      env:
+        SCRIPTS: ${{ inputs.python-scripts }}
+      run: |
+        set -euo pipefail
+        IFS=',' read -r -a scripts <<< "$SCRIPTS"
+        for script in "${scripts[@]}"; do
+          case "$script" in /*|../*|*/../*|*/..|*\\*) exit 2;; *.py) ;; *) exit 2;; esac
+          test -f "$script"
+          python3 "$script"
+        done
+    - name: Record source-bound diagnostic summary
+      if: always()
+      shell: bash
+      env:
+        LANGUAGE: ${{ inputs.language }}
+      run: |
+        {
+          echo "### Portable Core v1"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Event SHA (PR merge SHA on pull_request): $GITHUB_SHA"
+          echo "Checkout SHA: $(git rev-parse HEAD)"
+          echo "Adapter: $LANGUAGE"
+          echo "Scope: deterministic headless source checks only"
+        } >> "$GITHUB_STEP_SUMMARY"

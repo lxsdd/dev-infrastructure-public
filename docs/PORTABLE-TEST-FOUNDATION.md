@@ -1,46 +1,51 @@
-# Portable Test Foundation v1 — source-only contract
+# Portable Test Foundation v1 (source-only)
 
-This **public, generic** caller workflow is `.github/workflows/portable-core.yml`.
-Use `lxsdd/dev-infrastructure-public/.github/workflows/portable-core.yml@<reviewed-40-char-SHA>`
-from a consumer's *separate* FAST job, then add `needs: portable` to the existing
-expensive Windows build job. A branch pin is **not** a release pin. No secrets,
-artifacts, real audio, user databases, WPF host, or Android device checks belong here.
-
-Supported adapters: `cmake` (C++20 / CTest), `dotnet` (Linux-compatible test
-csproj or explicitly chosen executable selftest), `gradle` (JVM `test` task).
-Optional Python regression patterns and standalone source-policy scripts are run
-against the caller checkout. Only opt in where tests truly work on Ubuntu.
-Never pass a WPF WindowsDesktop build as a `dotnet` Linux test.
-
-Example caller (pin an actual audited commit after self-test):
+The canonical consumer entry is the **public composite action**
+`.github/actions/portable-core/action.yml`, pinned to an exact reviewed
+40-character Git commit. It does not depend on a private repository and does
+not replace any project-specific test. A composite action runs inside the
+caller's Linux FAST preflight; existing Windows jobs declare `needs: portable`.
+The product's CMake, .NET, or Gradle test project remains independently runnable
+without this shared action. No secret, user data, app binary or release artifact
+is stored or uploaded.
 
 ```yaml
 jobs:
   portable:
-    uses: lxsdd/dev-infrastructure-public/.github/workflows/portable-core.yml@REPLACE_WITH_APPROVED_40_CHAR_SHA
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-    with:
-      language: cmake
-      source-directory: tests
-      python-test-patterns: test_synthetic_bpm_*.py,test_mw1_comparator.py
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: lxsdd/dev-infrastructure-public/.github/actions/portable-core@REPLACE_WITH_REVIEWED_40_CHAR_SHA
+        with:
+          language: cmake
+          source-directory: tests
   windows:
     needs: portable
     runs-on: windows-latest
     steps:
-      # existing entire Windows/host/safety gate unchanged
+      # Entire existing native Windows/host/safety suite stays unchanged
 ```
 
-Portable failure blocks downstream Windows startup, but `FULL`, `CANDIDATE`,
-`RELEASE` and real acceptance retain all existing project-owned gates and identities.
-The caller remains independently buildable: CMake, dotnet, Gradle and its tests
-live in that product repository and can run locally without this workflow.
-Caching is limited to compiler and package caches; no qualified binaries.
-On any unexpected reusable-workflow outage, unpinning/bypassing the shared
-gate requires a documented local equivalent, never suppression of product tests.
+Adapters: `cmake` (C++ / CTest, fails if no tests), `dotnet` (Linux test csproj
+with a genuine test SDK or an executable selftest), `gradle` (JVM test task,
+**not** Android instrumentation). Optional `python-test-patterns` and
+`python-scripts` reuse product-owned fixtures, guards and policy contracts.
+Projects choose only headless portable portions of their existing qualification.
+Compiler and package caches never qualify binaries. The isolated Foundation
+self-test covers positive, negative, boundary, deterministic CTest expected
+failure, and a synthetic .NET executable. Gradle adapter remains
+UNVERIFIED pending a real Java/Kotlin consumer.
 
-The Foundation self-test runs source-only C++ and .NET positive/negative
-boundary cases and an expected-failure CTest. Java/Gradle is supported by the
-adapter but is NOT called validated until a real JVM consumer has passed.
-Measure saved Windows minutes from actual short-circuited runs; merely adding
-`needs` establishes potential avoidance, not measured savings.
+Evidence: source SHA is printed and included in the Action run's Step Summary.
+On PR events `GITHUB_SHA` normally identifies the GitHub-tested synthetic merge
+commit, distinct from the PR's head commit. Both the workflow run's head identity
+and checked-out commit must be included in product CI evidence.
+
+**Qualification is tiered.** This Linux gate precedes, never deletes, Windows
+Win32/x64/foobar host, real UI, database protection, Android Cast, FULL,
+CANDIDATE and exact-artifact RELEASE. No self-merges or releases. Savings must
+be measured from real skipped Windows jobs, not invented from estimates.

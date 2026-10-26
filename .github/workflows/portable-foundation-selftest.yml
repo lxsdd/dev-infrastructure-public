@@ -3,30 +3,42 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/portable-core.yml'
+      - '.github/actions/portable-core/**'
       - '.github/workflows/portable-foundation-selftest.yml'
       - 'tests/portable-fixtures/**'
   pull_request:
     branches: [main]
     paths:
-      - '.github/workflows/portable-core.yml'
+      - '.github/actions/portable-core/**'
       - '.github/workflows/portable-foundation-selftest.yml'
       - 'tests/portable-fixtures/**'
   workflow_dispatch:
+permissions:
+  contents: read
 concurrency:
   group: portable-selftest-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
-permissions:
-  contents: read
 jobs:
   cpp-positive-negative:
-    uses: ./.github/workflows/portable-core.yml
-    with:
-      language: cmake
-      source-directory: tests/portable-fixtures/cpp
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/portable-core
+        with:
+          language: cmake
+          source-directory: tests/portable-fixtures/cpp
   dotnet-positive-negative:
-    uses: ./.github/workflows/portable-core.yml
-    with:
-      language: dotnet
-      dotnet-project: tests/portable-fixtures/dotnet/PortableFixture.csproj
-      dotnet-mode: selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/portable-core
+        with:
+          language: dotnet
+          dotnet-project: tests/portable-fixtures/dotnet/PortableFixture.csproj
+          dotnet-mode: selftest

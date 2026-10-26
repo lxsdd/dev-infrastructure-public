@@ -11,22 +11,28 @@ DIFFERENT = "b" * 40
 def requirements():
     return [
         dict(role="contract_push", event="push",
-             workflow="Portfolio contract", required_jobs=["contract"]),
+             workflow="Portfolio contract", required_jobs=["contract"],
+             required_steps={"contract": ["real-test"]}),
         dict(role="contract_pr", event="pull_request",
-             workflow="Portfolio contract", required_jobs=["contract"]),
+             workflow="Portfolio contract", required_jobs=["contract"],
+             required_steps={"contract": ["real-test"]}),
         dict(role="baseline_pr", event="pull_request",
              workflow="Public baseline",
-             required_jobs=["synthetic-contract", "shared-source-drift"]),
+             required_jobs=["synthetic-contract", "shared-source-drift"],
+             required_steps={"synthetic-contract": ["real-test"],
+                             "shared-source-drift": ["real-test"]}),
     ]
 
 
 def passed_job(name):
     return dict(name=name, status="completed", conclusion="success",
-                executed_steps=5)
+                executed_steps=5,
+                steps=[dict(name="real-test", status="completed", conclusion="success")])
 
 
 def run(role, run_id, event, workflow, names):
     return dict(role=role, run_id=run_id, event=event, workflow=workflow,
+                repository="example/ci",
                 head_sha=SHA, status="completed", conclusion="success",
                 jobs=[passed_job(name) for name in names], artifacts=[])
 
@@ -44,6 +50,7 @@ class QualificationBundleTests(unittest.TestCase):
     def check(self, w=None, req=None, sha=SHA):
         return qualification_bundle_decision(
             witnesses() if w is None else w, expected_head=sha,
+            expected_repository="example/ci",
             required_runs=requirements() if req is None else req)
 
     def test_three_independent_exact_commit_runs_pass(self):
@@ -194,6 +201,58 @@ class QualificationBundleTests(unittest.TestCase):
         rows[2]["jobs"][1]["executed_steps"] = 3
         rows[2]["jobs"][1]["conclusion"] = "failure"
         self.assertEqual(self.check(rows), "FAIL")
+
+
+    def test_other_repository_run_cannot_replace_green_expected_run(self):
+        rows = witnesses()
+        rows[2]["repository"] = "example/different"
+        self.assertEqual(self.check(rows), "WRONG_REPOSITORY")
+
+    def test_missing_required_execution_step_denies_pass(self):
+        rows = witnesses()
+        rows[0]["jobs"][0]["steps"] = []
+        self.assertEqual(self.check(rows), "STEPS_NOT_VERIFIED")
+
+    def test_successful_job_with_skipped_real_test_denies_pass(self):
+        rows = witnesses()
+        rows[1]["jobs"][0]["steps"][0]["conclusion"] = "skipped"
+        self.assertEqual(self.check(rows), "STEPS_NOT_VERIFIED")
+
+    def test_required_step_explicit_failure_denies_pass(self):
+        rows = witnesses()
+        rows[2]["jobs"][1]["steps"][0]["conclusion"] = "failure"
+        self.assertEqual(self.check(rows), "FAIL")
+
+    def test_pending_required_step_denies_pass(self):
+        rows = witnesses()
+        rows[0]["jobs"][0]["steps"][0]["status"] = "in_progress"
+        self.assertEqual(self.check(rows), "PENDING")
+
+    def test_missing_steps_inventory_denies_pass(self):
+        rows = witnesses()
+        del rows[0]["jobs"][0]["steps"]
+        self.assertEqual(self.check(rows), "STEPS_NOT_VERIFIED")
+
+    def test_malformed_step_record_denies_pass(self):
+        rows = witnesses()
+        rows[2]["jobs"][0]["steps"] = [None]
+        self.assertEqual(self.check(rows), "INVALID_ATTESTATION")
+
+    def test_duplicate_named_step_denies_pass(self):
+        rows = witnesses()
+        rows[0]["jobs"][0]["steps"].append(dict(rows[0]["jobs"][0]["steps"][0]))
+        self.assertEqual(self.check(rows), "AMBIGUOUS")
+
+    def test_bad_required_steps_contract_denies_pass(self):
+        requirements_set = requirements()
+        requirements_set[0]["required_steps"] = {"not-a-required-job": ["real-test"]}
+        self.assertEqual(self.check(req=requirements_set), "INVALID_EXPECTATION")
+
+    def test_duplicate_required_test_step_denies_pass(self):
+        requirements_set = requirements()
+        requirements_set[0]["required_steps"] = {"contract": ["real-test", "real-test"]}
+        self.assertEqual(self.check(req=requirements_set), "INVALID_EXPECTATION")
+
 
 
 if __name__ == "__main__":

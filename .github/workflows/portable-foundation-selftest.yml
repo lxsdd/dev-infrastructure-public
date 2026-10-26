@@ -1,0 +1,32 @@
+name: Portable Foundation self-test
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/portable-core.yml'
+      - '.github/workflows/portable-foundation-selftest.yml'
+      - 'tests/portable-fixtures/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/portable-core.yml'
+      - '.github/workflows/portable-foundation-selftest.yml'
+      - 'tests/portable-fixtures/**'
+  workflow_dispatch:
+concurrency:
+  group: portable-selftest-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+jobs:
+  cpp-positive-negative:
+    uses: ./.github/workflows/portable-core.yml
+    with:
+      language: cmake
+      source-directory: tests/portable-fixtures/cpp
+  dotnet-positive-negative:
+    uses: ./.github/workflows/portable-core.yml
+    with:
+      language: dotnet
+      dotnet-project: tests/portable-fixtures/dotnet/PortableFixture.csproj
+      dotnet-mode: selftest

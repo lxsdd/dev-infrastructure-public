@@ -199,3 +199,52 @@ def reconcile_portfolio(assignments, live_prs, *, routes=None,
             "entries": statuses, "counts": counts,
             "public_route": route, "observed": len(live),
             "registered": len(owners)}
+
+def main(argv=None):
+    """Offline command-line verifier: never fetches GitHub or edits input files."""
+    import argparse
+    import json
+    import sys
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ownership", required=True,
+                        help="PRIVATE local ownership JSON path; never upload it")
+    parser.add_argument("--live-prs", required=True,
+                        help="independently retrieved current PR snapshot JSON array")
+    parser.add_argument("--routes", required=True,
+                        help="PRIVATE local runner-routes JSON path; never upload it")
+    parser.add_argument("--control-repo")
+    parser.add_argument("--control-branch")
+    parser.add_argument("--control-pr", type=int)
+    args = parser.parse_args(argv)
+    control_fields = (args.control_repo, args.control_branch, args.control_pr)
+    if any(value is not None for value in control_fields) and not all(
+            value is not None for value in control_fields):
+        parser.error("all three control identity options are required together")
+    try:
+        ownership = json.loads(Path(args.ownership).read_text(encoding="utf-8"))
+        observations = json.loads(Path(args.live_prs).read_text(encoding="utf-8"))
+        routes = json.loads(Path(args.routes).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError) as exc:
+        print("NOT_VERIFIED: unable to read complete local input: " +
+              type(exc).__name__, file=sys.stderr)
+        return 2
+    if not isinstance(ownership, dict) or not isinstance(routes, dict):
+        print("NOT_VERIFIED: invalid JSON document shapes", file=sys.stderr)
+        return 2
+    result = reconcile_portfolio(
+        ownership.get("assignments"), observations, routes=routes,
+        control_identity=control_fields if all(value is not None for value
+                                               in control_fields) else None)
+    print(json.dumps(result, sort_keys=True, ensure_ascii=False, indent=2))
+    # Return zero only for a fully reconciled *recorded* state. Even then,
+    # this is never authority to dispatch, merge, release or write source.
+    return 0 if (result.get("status") ==
+                 "RECORDED_STATE_CONSISTENT_NOT_AUTHORITY_TO_WRITE" and
+                 result.get("public_route") ==
+                 "RECORDED_REFERENCE_COHERENT_NOT_LIVE_CI_VERIFIED") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

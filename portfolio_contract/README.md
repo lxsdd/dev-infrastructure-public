@@ -5,7 +5,7 @@ This directory is an openly testable, **generic** implementation of the portfoli
 - No private GitHub repositories, branch names, PR titles, user paths, credentials or real project data are stored here.
 - The fixture uses only fictitious `example/...` repository identities and artificial 40-character commit IDs.
 - The script does not connect to GitHub, use an API token or mutate files. It validates caller-supplied in-memory JSON dictionaries.
-- `scheduler.py` adds a side-effect-free **dispatch/attestation preflight**: exact-HEAD check, duplicate/expired lease reconciliation, hard zero-extra-cost policy (paid model APIs and compute forbidden), existing-subscription plan capacity and owner gates, private-to-public CI deny, and non-PASS for zero-step/missing/failing GitHub jobs. Thirty-eight synthetic tests in `test_scheduler.py` enforce these fail-closed rules. Source-only CI now additionally requires a **verified empty GitHub run-artifact inventory** before returning PASS: missing artifact evidence, unexpectedly published ZIPs, boolean stand-ins for executed-step counts, duplicate required jobs, malformed CI job rows or job names, and PR-only run lookup gaps cannot be mistaken for success. An empty PR-only lookup of a push event remains `NOT_RUN` until the actual push run is independently located; **nothing here creates live sessions, leases, schedules or paid requests**.
+- `scheduler.py` adds a side-effect-free **dispatch/attestation preflight**: exact-HEAD check, duplicate/expired lease reconciliation, hard zero-extra-cost policy (paid model APIs and compute forbidden), existing-subscription plan capacity and owner gates, private-to-public CI deny, and non-PASS for zero-step/missing/failing GitHub jobs. Fifty-three synthetic tests in `test_scheduler.py` enforce these fail-closed rules. Source-only CI now additionally requires a **verified empty GitHub run-artifact inventory** before returning PASS: missing artifact evidence, unexpectedly published ZIPs, boolean stand-ins for executed-step counts, duplicate required jobs, malformed CI job rows or job names, and PR-only run lookup gaps cannot be mistaken for success. An empty PR-only lookup of a push event remains `NOT_RUN` until the actual push run is independently located; **nothing here creates live sessions, leases, schedules or paid requests**.
 - `scheduler.synthetic_ci_route_decision` additionally distinguishes public-source/source-cleared, synthetic/no-secret/no-artifact CI from quota-blocked private Actions. It rejects private-to-public source transfer *even if someone claims the source is cleared*, requires an exact source SHA, denies uncleared sources, personal data, secret use, publication and paid compute, and prefers public runners for eligible public source. Private-only validation is `PRIVATE_QUOTA_HOLD` unless private capacity is independently verified; public synthetic PASS does **not** replace execution of actual private tests. This is a pure routing proposal with synthetic tests, **not** a GitHub settings change, billing control, actual runner dispatcher, or authorization to copy private sources. Protected product-specific authenticated QA remains outside this generic secret-free contract.
 - `coordination.py` adds a **CHAT / AGENT / FREI / BLOCKIERT** branch-ownership preflight, enforced by `scheduler.dispatch_decision`. It requires a freshly verified GitHub PR state of `open` before any source claim and rejects closed/merged PRs or a contradictory merged-historical registry snapshot. It rejects duplicate branch records, ambiguous/missing ownership, stale source and ledger SHAs, cross-lane takeovers, blocked work and *all* unreconciled claims, even when their timeout has elapsed. Returning `READY_TO_CLAIM` is **not permission to edit source**: the caller must first atomically write the claim into the private GitHub ledger using its just-fetched blob SHA, re-read the result, then recheck the actual branch HEAD. An expired claim is never silently stolen. Public tests use only fictitious identities.
 - `selection.py` implements a **P0-before-P1, evidence-based, project-family fairness tie-break** as a second pure preflight. It evaluates concrete reproducibility evidence and the existing per-branch CHAT/AGENT/FREI/BLOCKIERT ownership and exact live-PR checks; among equally urgent claimable tasks it selects the family with the oldest independently supplied successful-work timestamp. A P0 initiative label alone cannot outrank a proven P1 defect. Ambiguous duplicate tasks, conflicting family history, stale private ledger state, unavailable plan capacity, unverified PR lifecycle, unexplained claims and paid sources are rejected or excluded. It does **not** fetch private progress, modify the scheduler, create a session, acquire a lock or guarantee unattended work. The caller must independently inspect the entire private initiative pool, recheck real GitHub state and acquire/reverify its CAS claim before writing source. Seventeen synthetic tests in `test_selection.py` exercise both positive priority and negative safety boundaries.
@@ -18,6 +18,32 @@ This directory is an openly testable, **generic** implementation of the portfoli
 ```sh
 python3 -m unittest discover -s portfolio_contract -p 'test_*.py' -v
 ```
+
+## Public-source CI and staged cross-project adoption
+
+GitHub Actions in a **private** repository may be quota-blocked before any
+test step executes; a zero-step failure is `NOT_RUN`, never compiler or Python
+test failure. Source-cleared portable logic and fictitious test inputs can be
+evaluated by the separate **public** portfolio contract workflow; the real
+private portfolio register, its 58 private-only regressions, user datasets and
+private product sources cannot be copied to that public job.
+
+The public baseline workflow independently verifies two source populations:
+**13 current-main shared files** against the original reviewed registry and
+**3 immutable draft source/provenance objects** from the staged guard rollout
+manifest. The latter proves the exact canonical guard's bytes are carried into
+the reviewed DJ Library source and its source pin matches. It is not evidence
+that every consumer has adopted the new version or that the owner's draft
+was merged. The actual DJ Library original C++ Bridge and WPF Win32/x64
+runtime gates require their own product exact-HEAD CI; no binary is uploaded.
+Studio, Bridge, and MyTagSync still require owner-controlled integration.
+
+For central portfolio evidence, qualify the **same exact public commit** with
+both the portfolio **push** and **pull_request** contract runs, plus a separate
+public baseline PR run. Neither an old SHA green check nor a baseline job may
+be substituted for a missing contract run. Preserve a verified empty artifact
+inventory for all qualifying public runs. This contract is source-only and
+does not authorize releases, private Actions billing, or product/device writes.
 
 ## Adoption
 

@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 module_spec = importlib.util.spec_from_file_location("pin", ROOT / "scripts/promote_protected_discogger_pin.py")
 pin = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(pin)
-SHA = "9d66c668589482ca061c934685b23dedfb347fb0"
+REVIEWED = json.loads((ROOT / "contracts/discogger-reviewed-native-source.json").read_text(encoding="utf-8"))
+SHA = REVIEWED["source_sha"]
+RUN_ID = REVIEWED["qualified_push_run_id"]
 OLD = "c5a5ec321c359186c32cf1a4f2509ceaf033b7d4"
 REQUIRED = [
     "portable-core", "windows-baseline", "windows-native-unit (x86)",
@@ -41,7 +43,7 @@ def checked(data):
         if path.endswith("/artifacts?per_page=100"):
             return data[2]
         return data[0]
-    return pin.verify_source_qualification(SHA, 40535730661, fetch)
+    return pin.verify_source_qualification(SHA, RUN_ID, fetch)
 
 
 class CIProof(unittest.TestCase):

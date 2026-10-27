@@ -6,8 +6,8 @@
 
 | Evidence | Immutable identity | Status |
 | --- | --- | --- |
-| Discogger Draft #23 source | `9d66c668589482ca061c934685b23dedfb347fb0` | Latest fully qualified source at final promotion preparation |
-| Product push Windows/native+SDK/host qualification | [Run 40535730661](https://github.com/lxsdd/foo_discogger/actions/runs/40535730661) | 5 required jobs SUCCESS, `authorized-discogs-live` SKIPPED, 0 artifacts |
+| Discogger Draft #23 source | `d735774103262c2cc32daeee58f76374ab76606f` | Latest fully qualified source at final promotion preparation |
+| Product push Windows/native+SDK/host qualification | [Run 40565291386](https://github.com/lxsdd/foo_discogger/actions/runs/40565291386) | 5 required jobs SUCCESS, `authorized-discogs-live` SKIPPED, 0 artifacts |
 | Central five-release OAuth1 API-only health | [Run 40489971092](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/40489971092) | Historical API 5/5 PASS; **not** native current-source QA |
 | Protected authentic native Win32/x64 historical QA | [Run 40362018116](https://github.com/lxsdd/dev-infrastructure-public/actions/runs/40362018116) | Historical GUI SUCCESS on an older pinned SHA, 0 artifacts |
 | Protected authentic native Win32/x64 on `c3c3fafb…` | Main-only guarded workflow | **PENDING** until reviewed source promotion merges to main and workflow runs |

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "source_repository": "lxsdd/foo_discogger",
+  "source_pr": 23,
+  "source_branch": "fix/discogger-optional-fallback-failure-20261026",
+  "source_sha": "9d66c668589482ca061c934685b23dedfb347fb0",
+  "qualified_push_run_id": 40535730661,
+  "source_ci": "EXACT_SHA_NATIVE_WIN32_X64_HOST_PASS_40535730661",
+  "protected_native_oauth": "PENDING_PROTECTED_MAIN_ONLY",
+  "required_releases": [
+    "38012673",
+    "37332711",
+    "36397609",
+    "36819730",
+    "35534398"
+  ],
+  "review_contract": "Merge to protected main only after independent owner approval; do not authorize arbitrary workflow_dispatch SHAs or pull_request secrets."
+}

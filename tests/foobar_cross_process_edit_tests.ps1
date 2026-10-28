@@ -53,8 +53,17 @@ try {
     if($found.Length -ne 0) { $window=$found[0];break }
   }
   if($window -eq [IntPtr]::Zero) { throw 'Synthetic other-process top-level HWND not found.' }
-  $remote=[FoobarHostWindow]::GetDlgItem($window,291)
-  if($remote -eq [IntPtr]::Zero) { throw 'Synthetic remote EDIT control ID missing.' }
+  # EnumWindows can observe the top-level HWND before CreateWindowExW
+  # creates its EDIT child in the other process. Wait for child readiness.
+  $remote=[IntPtr]::Zero
+  for($childPoll=0;$childPoll -lt 50;$childPoll++) {
+    $remote=[FoobarHostWindow]::GetDlgItem($window,291)
+    if($remote -ne [IntPtr]::Zero) { break }
+    $proc.Refresh()
+    if($proc.HasExited) { throw 'Synthetic child exited before EDIT became ready.' }
+    Start-Sleep -Milliseconds 100
+  }
+  if($remote -eq [IntPtr]::Zero) { throw 'Synthetic remote EDIT did not become ready.' }
   $title=[FoobarHostWindow]::Text($window,291)
   if($title -cne '1000 Years') {
     throw "Cross-process EDIT WM_GETTEXT produced unexpected length $($title.Length)."

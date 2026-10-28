@@ -1,0 +1,54 @@
+name: Shared foobar2000 x86/x64 host baseline
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/actions/foobar-host-smoke/**"
+      - ".github/workflows/foobar-host-smoke.yml"
+      - "docs/FOOBAR-HOST-MATRIX.md"
+      - "tests/foobar_authorized_scope_tests.ps1"
+      - "tests/foobar_cross_process_edit_tests.ps1"
+      - "tests/foobar_host_policy_tests.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foobar-host-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  official-host-boot:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed on malformed host PowerShell
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location) '.github/actions/foobar-host-smoke/host-smoke.ps1'),
+            [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw ($errors | Out-String) }
+      - name: Verify no credential or artifact path in shared runner
+        shell: pwsh
+        run: python tests/foobar_host_policy_tests.py
+      - name: Reject unauthorized Discogs event and commit fixtures
+        if: matrix.architecture == 'Win32'
+        shell: pwsh
+        run: ./tests/foobar_authorized_scope_tests.ps1
+      - name: Verify real cross-process native EDIT text (synthetic only)
+        shell: pwsh
+        run: ./tests/foobar_cross_process_edit_tests.ps1
+      - name: Start verified official foobar2000 host ${{ matrix.architecture }}
+        uses: ./.github/actions/foobar-host-smoke
+        with:
+          architecture: ${{ matrix.architecture }}

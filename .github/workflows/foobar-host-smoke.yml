@@ -9,6 +9,7 @@ on:
       - ".github/workflows/foobar-host-smoke.yml"
       - "docs/FOOBAR-HOST-MATRIX.md"
       - "tests/foobar_authorized_scope_tests.ps1"
+      - "tests/foobar_cross_process_edit_tests.ps1"
       - "tests/foobar_host_policy_tests.py"
 
 permissions:
@@ -44,6 +45,9 @@ jobs:
         if: matrix.architecture == 'Win32'
         shell: pwsh
         run: ./tests/foobar_authorized_scope_tests.ps1
+      - name: Verify real cross-process native EDIT text (synthetic only)
+        shell: pwsh
+        run: ./tests/foobar_cross_process_edit_tests.ps1
       - name: Start verified official foobar2000 host ${{ matrix.architecture }}
         uses: ./.github/actions/foobar-host-smoke
         with:

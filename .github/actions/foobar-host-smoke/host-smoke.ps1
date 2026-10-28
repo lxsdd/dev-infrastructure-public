@@ -66,7 +66,7 @@ public static class FoobarHostWindow {
   [DllImport("user32.dll")] static extern IntPtr SendMessageTimeoutW(IntPtr h,uint m,IntPtr w,IntPtr l,uint flags,uint timeout,out IntPtr result);
   // WM_GETTEXT is a system message: user32 marshals its buffer across processes.
   // GetWindowTextW cannot read another process's EDIT control contents.
-  [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW",CharSet=CharSet.Unicode,SetLastError=true)]
+  [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW",ExactSpelling=true,CharSet=CharSet.Unicode,SetLastError=true)]
   static extern IntPtr SendMessageTimeoutText(IntPtr h,uint m,IntPtr w,[Out] StringBuilder l,uint flags,uint timeout,out IntPtr result);
   public static IntPtr[] Find(uint pid,string title) {
     var windows=new System.Collections.Generic.List<IntPtr>();

@@ -64,6 +64,10 @@ public static class FoobarHostWindow {
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h,int id);
   [DllImport("user32.dll")] static extern IntPtr SendMessageTimeoutW(IntPtr h,uint m,IntPtr w,IntPtr l,uint flags,uint timeout,out IntPtr result);
+  // WM_GETTEXT is a system message: user32 marshals its buffer across processes.
+  // GetWindowTextW cannot read another process's EDIT control contents.
+  [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW",CharSet=CharSet.Unicode,SetLastError=true)]
+  static extern IntPtr SendMessageTimeoutText(IntPtr h,uint m,IntPtr w,[Out] StringBuilder l,uint flags,uint timeout,out IntPtr result);
   public static IntPtr[] Find(uint pid,string title) {
     var windows=new System.Collections.Generic.List<IntPtr>();
     EnumWindows((h,p)=>{
@@ -163,9 +167,18 @@ public static class FoobarHostWindow {
   public static string Text(IntPtr hwnd,int id) {
     var control=id==0?hwnd:GetDlgItem(hwnd,id);
     if(control==IntPtr.Zero) return "";
-    var text=new StringBuilder(1024);
-    GetWindowTextW(control,text,text.Capacity);
-    return text.ToString();
+    var value=new StringBuilder(1024);
+    if(id==0) {
+      // Window captions are available cross-process through GetWindowTextW.
+      GetWindowTextW(control,value,value.Capacity);
+    } else {
+      // Child EDIT/STATIC controls require a bounded WM_GETTEXT read; never
+      // interpret a cross-process GetWindowTextW empty string as source data.
+      IntPtr characters;
+      if(SendMessageTimeoutText(control,0x000D,new IntPtr(value.Capacity),value,2,5000,out characters)==IntPtr.Zero)
+        throw new InvalidOperationException("Native control WM_GETTEXT timed out or was denied.");
+    }
+    return value.ToString();
   }
   public static string[] Describe(uint pid) {
     var windows=new System.Collections.Generic.List<string>();

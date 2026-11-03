@@ -1,0 +1,53 @@
+name: Studio owner-data native content qualification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/actions/foobar-host-smoke/**'
+      - '.github/workflows/studio-ownerdata-native-qualification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-native-content:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: lxsdd/music-metadata-studio
+          ref: 7af40f097843808e2a15509dde108ce52d561f3b
+          path: studio
+          persist-credentials: false
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build exact verified Studio source
+        shell: pwsh
+        working-directory: studio
+        run: ./scripts/build-foobar.ps1 -Platform '${{ matrix.architecture }}' -Configuration Release -PlatformToolset v143
+      - name: Verify native mix rows/provenance and fail-closed stale WAV
+        uses: ./.github/actions/foobar-host-smoke
+        with:
+          architecture: ${{ matrix.architecture }}
+          component-dll: studio/out/foobar/${{ matrix.architecture }}/Release/foo_music_metadata_studio.dll
+          context-command: 'Music Metadata Studio/Prepare Tracks (Preview)...'
+          expected-window-title: 'Music Metadata Studio - Prepare Tracks (Read-only)'
+          required-control-ids: '270,273,271,291,292,293,294,299'
+          offline-clipboard-test: |
+            @provider=discogs
+            @id=release:123456
+            @scope=edition
+            TITLE=Runner Synthetic Recording
+            GENRE=Progressive Trance
+            DATE_RAW@edition=2026-10-20
+          clipboard-button-id: '289'
+          clipboard-list-id: '271'
+          beatport-edition-host-probe: 'true'
+          stale-physical-host-probe: 'true'

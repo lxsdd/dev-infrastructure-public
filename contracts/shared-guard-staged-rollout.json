@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "contract_id": "public-guard-staged-immutable-rollout",
+  "scope": "Public source-only, anonymous immutable Git commit verification. Draft-owner/consumer proof only; never a deployed-main, release, license, private CI, or real data assertion.",
+  "owner": {
+    "repo": "lxsdd/dev-infrastructure-public",
+    "commit": "4ea764a2e586ebe3c4274634666f77b3370dc246",
+    "path": "shared/ci/publication_guard.py",
+    "sha1": "ff55f22ac0aafc500e8ee5235e253d0bb4ad8d69"
+  },
+  "adoptions": [
+    {
+      "repo": "lxsdd/dj-library-public",
+      "commit": "4cc06f09daeb4769a0c5122f97d4df3e66e40473",
+      "path": "scripts/_shared_publication_guard.py",
+      "pin_path": "scripts/SHARED_PUBLICATION_GUARD.pin.json",
+      "sha1": "ff55f22ac0aafc500e8ee5235e253d0bb4ad8d69"
+    }
+  ]
+}

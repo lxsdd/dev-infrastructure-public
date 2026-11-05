@@ -41,3 +41,5 @@ jobs:
         run: python3 tests/check_shared_source_drift.py
       - name: Verify all owner and consumer main Git blobs (read-only)
         run: python3 scripts/audit_shared_source_drift.py --live
+      - name: Verify immutable public draft guard source and consumer provenance
+        run: python3 scripts/audit_shared_source_drift.py --staged

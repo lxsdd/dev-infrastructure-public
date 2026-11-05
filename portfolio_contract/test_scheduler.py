@@ -1,0 +1,260 @@
+import unittest
+
+from scheduler import ci_decision, dispatch_decision, synthetic_ci_route_decision
+
+SHA = "a" * 40
+NEW = "b" * 40
+
+
+def task(**changes):
+    data = dict(repository="example/foobar", branch="work/test", expected_head=SHA,
+                state="QUEUED", source_visibility="public", runner_kind="chatgpt_subscription_task")
+    data.update(changes)
+    return data
+
+
+def job(**changes):
+    data = dict(name="contract", status="completed", conclusion="success",
+                executed_steps=5)
+    data.update(changes)
+    return data
+
+
+class AgentDispatchContractTests(unittest.TestCase):
+    def check(self, item=None, **kwargs):
+        item = item or task()
+        ownership = kwargs.pop("ownership_assignments", [
+            dict(repository=item["repository"], branch=item["branch"],
+                 head_sha=item["expected_head"], mode="AGENT", claim=None)])
+        return dispatch_decision(
+            item, actual_head=kwargs.pop("actual_head", SHA),
+            plan_capacity_available=kwargs.pop("plan_capacity_available", True),
+            now=kwargs.pop("now", 100), leases=kwargs.pop("leases", ()),
+            actor=kwargs.pop("actor", "AGENT"),
+            ownership_assignments=ownership,
+            expected_ledger_sha=kwargs.pop("expected_ledger_sha", NEW),
+            observed_ledger_sha=kwargs.pop("observed_ledger_sha", NEW),
+            actual_pr_state=kwargs.pop("actual_pr_state", "open"))
+
+    def test_ready_public_pilot(self):
+        self.assertEqual(self.check(), "READY_TO_CLAIM")
+
+    def test_dispatch_without_owned_branch_must_stop(self):
+        self.assertEqual(self.check(ownership_assignments=None), "INVALID_LEDGER")
+
+    def test_dispatch_respects_chat_ownership(self):
+        rows = [dict(repository="example/foobar", branch="work/test",
+                     head_sha=SHA, mode="CHAT", claim=None)]
+        self.assertEqual(self.check(ownership_assignments=rows),
+                         "OTHER_LANE_OWNS_BRANCH")
+
+    def test_dispatch_cannot_skip_stale_ledger_reconciliation(self):
+        self.assertEqual(self.check(observed_ledger_sha=SHA), "STALE_LEDGER")
+
+    def test_dispatch_without_live_pr_verification_is_denied(self):
+        self.assertEqual(self.check(actual_pr_state=None), "PR_STATE_UNVERIFIED")
+
+    def test_dispatch_after_pr_merged_is_denied(self):
+        self.assertEqual(self.check(actual_pr_state="closed"), "PR_NOT_OPEN")
+
+    def test_stale_sha_never_dispatches(self):
+        self.assertEqual(self.check(actual_head=NEW), "STALE_HEAD")
+
+    def test_same_branch_active_lease_prevents_double_agent(self):
+        leases = [dict(repository="example/foobar", branch="work/test",
+                       state="RUNNING", expires_at=150)]
+        self.assertEqual(self.check(leases=leases), "ALREADY_RUNNING")
+
+    def test_expired_lease_requires_remote_reconciliation(self):
+        leases = [dict(repository="example/foobar", branch="work/test",
+                       state="RUNNING", expires_at=99)]
+        self.assertEqual(self.check(leases=leases), "RECONCILE_REMOTE")
+
+    def test_subscription_plan_capacity_is_a_hard_gate(self):
+        self.assertEqual(self.check(plan_capacity_available=False), "PLAN_LIMIT_HOLD")
+
+    def test_external_paid_api_is_forbidden(self):
+        self.assertEqual(self.check(task(requires_paid_api=True)), "PAID_PROVIDER_FORBIDDEN")
+
+    def test_paid_compute_is_forbidden(self):
+        self.assertEqual(self.check(task(requires_billed_compute=True)), "PAID_PROVIDER_FORBIDDEN")
+
+    def test_no_automatic_owner_approval(self):
+        self.assertEqual(self.check(task(owner_approval_required=True)), "BLOCKED_OWNER")
+
+    def test_private_source_cannot_use_public_ci(self):
+        self.assertEqual(self.check(task(source_visibility="private",
+                                         public_ci_repo="example/foobar-public")), "PRIVACY_BLOCK")
+
+    def test_three_identical_failures_halt(self):
+        self.assertEqual(self.check(task(same_failure_count=3)), "REPEATED_FAILURE_HOLD")
+
+    def test_done_never_reopens(self):
+        self.assertEqual(self.check(task(state="DONE")), "ALREADY_DONE")
+
+    def test_a_ci_runner_is_not_an_agent(self):
+        self.assertEqual(self.check(task(runner_kind="github_actions")), "INVALID_RUNNER")
+
+
+class CiAttestationContractTests(unittest.TestCase):
+    def check(self, jobs, sha=SHA, required=("contract",),
+              require_no_artifacts=False, **evidence):
+        return ci_decision({"head_sha": sha, "jobs": jobs, **evidence},
+                           expected_head=SHA, required_jobs=required,
+                           require_no_artifacts=require_no_artifacts)
+
+    def test_exact_commit_real_steps_pass(self):
+        self.assertEqual(self.check([job()]), "PASS")
+
+    def test_zero_step_admission_is_not_pass(self):
+        self.assertEqual(self.check([job(executed_steps=0)]), "NOT_RUN")
+
+    def test_wrong_source_is_not_pass(self):
+        self.assertEqual(self.check([job()], sha=NEW), "STALE_HEAD")
+
+    def test_required_job_missing_is_not_pass(self):
+        self.assertEqual(self.check([job()], required=("contract", "host")), "NOT_RUN")
+
+    def test_real_host_failure_overrides_green_contract(self):
+        self.assertEqual(self.check([job(), job(name="host", conclusion="failure")],
+                                    required=("contract", "host")), "FAIL")
+
+    def test_pending_not_pass(self):
+        self.assertEqual(self.check([job(status="in_progress")]), "PENDING")
+
+    def test_duplicate_job_identity_is_ambiguous(self):
+        self.assertEqual(self.check([job(), job()]), "AMBIGUOUS")
+
+    def test_source_only_exact_empty_artifacts_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True,
+                                    artifacts=[]), "PASS")
+
+    def test_source_only_missing_artifact_inventory_does_not_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True),
+                         "ARTIFACTS_NOT_VERIFIED")
+
+    def test_source_only_invalid_artifact_inventory_does_not_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True,
+                                    artifacts=None), "ARTIFACTS_NOT_VERIFIED")
+
+    def test_source_only_published_binary_is_not_pass(self):
+        self.assertEqual(self.check([job()], require_no_artifacts=True,
+                                    artifacts=[{"name": "public-build.zip"}]),
+                         "ARTIFACTS_PRESENT")
+
+    def test_source_only_wrong_commit_with_no_artifacts_still_stale(self):
+        self.assertEqual(self.check([job()], sha=NEW,
+                                    require_no_artifacts=True, artifacts=[]),
+                         "STALE_HEAD")
+
+    def test_source_only_empty_push_lookup_is_not_failure_or_pass(self):
+        self.assertEqual(self.check([], require_no_artifacts=True,
+                                    artifacts=[]), "NOT_RUN")
+
+    def test_boolean_executed_step_attestation_is_not_real_step_count(self):
+        self.assertEqual(self.check([job(executed_steps=True)]), "NOT_RUN")
+
+    def test_duplicate_required_job_contract_is_invalid(self):
+        self.assertEqual(self.check([job()], required=("contract", "contract")),
+                         "INVALID_EXPECTATION")
+
+    def test_nonmapping_ci_attestation_is_rejected(self):
+        self.assertEqual(ci_decision(None, expected_head=SHA,
+                                     required_jobs=("contract",)),
+                         "INVALID_ATTESTATION")
+
+    def test_nonmapping_job_entry_is_rejected(self):
+        self.assertEqual(self.check([None]), "INVALID_ATTESTATION")
+
+    def test_list_job_name_is_rejected_without_exception(self):
+        self.assertEqual(self.check([job(name=[])]), "INVALID_ATTESTATION")
+
+    def test_numeric_job_name_is_rejected(self):
+        self.assertEqual(self.check([job(name=123)]), "INVALID_ATTESTATION")
+
+    def test_null_job_name_is_rejected(self):
+        self.assertEqual(self.check([job(name=None)]), "INVALID_ATTESTATION")
+
+    def test_empty_job_name_is_rejected(self):
+        self.assertEqual(self.check([job(name="")]), "INVALID_ATTESTATION")
+
+
+class SyntheticCiRouteContractTests(unittest.TestCase):
+    def route(self, **changes):
+        data = dict(source_visibility="public", runner_visibility="public",
+                    expected_head=SHA, source_cleared=True,
+                    synthetic_only=True, uses_secrets=False,
+                    contains_private_data=False, uploads_artifacts=False,
+                    requires_paid_compute=False)
+        data.update(changes)
+        return data
+
+    def check(self, route=None, *, actual_head=SHA, private_actions_available=False):
+        return synthetic_ci_route_decision(
+            self.route() if route is None else route,
+            actual_head=actual_head,
+            private_actions_available=private_actions_available)
+
+    def test_public_license_cleared_synthetic_allowed(self):
+        self.assertEqual(self.check(), "PUBLIC_SYNTHETIC_ELIGIBLE")
+
+    def test_private_source_never_uploaded_to_public_even_if_marked_cleared(self):
+        self.assertEqual(self.check(self.route(source_visibility="private")),
+                         "PRIVACY_BLOCK")
+
+    def test_private_source_uses_private_runner_only_when_quota_available(self):
+        route = self.route(source_visibility="private", runner_visibility="private",
+                           source_cleared=False)
+        self.assertEqual(self.check(route), "PRIVATE_QUOTA_HOLD")
+        self.assertEqual(self.check(route, private_actions_available=True),
+                         "PRIVATE_SYNTHETIC_ELIGIBLE")
+
+    def test_private_quota_cannot_be_assumed_true_from_truthy_string(self):
+        self.assertEqual(self.check(private_actions_available="yes"), "INVALID_ROUTE")
+
+    def test_public_source_must_not_waste_private_quota(self):
+        self.assertEqual(self.check(self.route(runner_visibility="private"),
+                                    private_actions_available=True),
+                         "USE_PUBLIC_RUNNER")
+
+    def test_uncleared_public_source_denied(self):
+        self.assertEqual(self.check(self.route(source_cleared=False)),
+                         "SOURCE_NOT_CLEARED")
+
+    def test_no_user_data_on_public_synthetic_runner(self):
+        self.assertEqual(self.check(self.route(contains_private_data=True)),
+                         "PRIVACY_BLOCK")
+
+    def test_no_secrets_in_generic_synthetic_route(self):
+        self.assertEqual(self.check(self.route(uses_secrets=True)), "SECRET_BLOCK")
+
+    def test_no_public_product_artifacts(self):
+        self.assertEqual(self.check(self.route(uploads_artifacts=True)),
+                         "PUBLICATION_BLOCK")
+
+    def test_no_paid_runner_even_for_public_source(self):
+        self.assertEqual(self.check(self.route(requires_paid_compute=True)),
+                         "PAID_PROVIDER_FORBIDDEN")
+
+    def test_no_non_synthetic_owner_fixtures(self):
+        self.assertEqual(self.check(self.route(synthetic_only=False)),
+                         "NON_SYNTHETIC_INPUT")
+
+    def test_exact_commit_still_required(self):
+        self.assertEqual(self.check(actual_head=NEW), "STALE_HEAD")
+
+    def test_invalid_source_head_rejected(self):
+        self.assertEqual(self.check(self.route(expected_head="not-a-sha")),
+                         "INVALID_ROUTE")
+
+    def test_boolean_flags_cannot_be_loosely_cast(self):
+        self.assertEqual(self.check(self.route(contains_private_data="false")),
+                         "INVALID_ROUTE")
+
+    def test_missing_route_is_invalid_not_a_public_go(self):
+        self.assertEqual(self.check(route=None, actual_head=NEW), "STALE_HEAD")
+        self.assertEqual(self.check(route=[]), "INVALID_ROUTE")
+
+
+if __name__ == "__main__":
+    unittest.main()

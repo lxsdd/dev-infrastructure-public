@@ -113,10 +113,141 @@ def read_public_main(repo, path):
     raise OSError("public source fetch failed after retries: " + str(last))
 
 
+
+STAGED_ROLLOUT = REGISTRY.parent / "shared-guard-staged-rollout.json"
+STAGED_PUBLIC_REPOS = frozenset({
+    "lxsdd/dev-infrastructure-public",
+    "lxsdd/dj-library-public",
+})
+
+
+def _staged_target(target, *, owner=False):
+    if not isinstance(target, dict):
+        raise ValueError("invalid immutable staged source target")
+    repo, commit, path = (target.get("repo"), target.get("commit"),
+                          target.get("path"))
+    if not isinstance(repo, str) or repo not in STAGED_PUBLIC_REPOS:
+        raise ValueError("unreviewed or private staged source repository")
+    if not isinstance(commit, str) or not SHA_RE.fullmatch(commit):
+        raise ValueError("mutable or invalid staged source ref")
+    if (not isinstance(path, str) or not PATH_RE.fullmatch(path)
+            or path.startswith("/") or
+            any(p in ("", ".", "..") for p in path.split("/"))):
+        raise ValueError("unsafe staged source path")
+    sha = target.get("sha1")
+    if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
+        raise ValueError("invalid immutable Git blob hash")
+    if owner and (repo, path) != (
+            "lxsdd/dev-infrastructure-public", "shared/ci/publication_guard.py"):
+        raise ValueError("invalid canonical staged guard owner")
+
+
+def validate_staged_rollout(plan):
+    """Schema for public immutable snapshots; intentionally NOT live PR status."""
+    if (not isinstance(plan, dict) or plan.get("schema_version") != 1
+            or plan.get("contract_id") != "public-guard-staged-immutable-rollout"):
+        raise ValueError("unknown immutable staged rollout schema")
+    canonical = plan.get("owner")
+    _staged_target(canonical, owner=True)
+    adopters = plan.get("adoptions")
+    if not isinstance(adopters, list) or not adopters:
+        raise ValueError("staged contract requires at least one adoption")
+    seen = set()
+    for entry in adopters:
+        _staged_target(entry)
+        if entry["repo"] == canonical["repo"]:
+            raise ValueError("owner cannot masquerade as a consumer")
+        pin_path = entry.get("pin_path")
+        if (not isinstance(pin_path, str) or not PATH_RE.fullmatch(pin_path)
+                or pin_path.startswith("/") or
+                any(part in ("", ".", "..") for part in pin_path.split("/"))):
+            raise ValueError("unsafe or missing staged provenance pin path")
+        if entry["sha1"] != canonical["sha1"]:
+            raise ValueError("staged consumer source Git blob is not canonical")
+        key = (entry["repo"], entry["commit"], entry["path"])
+        if key in seen or pin_path == entry["path"]:
+            raise ValueError("duplicate or self-referential staged consumer")
+        seen.add(key)
+
+
+def check_staged_rollout(plan, fetch):
+    """Compare exact-public-commit Git objects; no tokens or write access.
+
+    Pin bytes are verified semantically against the canonical source, not
+    treated as a claim that a draft was merged or a native Windows test ran.
+    """
+    validate_staged_rollout(plan)
+    owner = plan["owner"]
+    checked, errors = 0, []
+    for target in [owner, *plan["adoptions"]]:
+        checked += 1
+        try:
+            data = fetch(target["repo"], target["commit"], target["path"])
+            if not isinstance(data, bytes):
+                raise TypeError("staged reader did not return bytes")
+            if git_blob_sha1(data) != owner["sha1"]:
+                errors.append("STAGED_SOURCE_DRIFT: " + target["repo"] +
+                              "/" + target["path"])
+        except (OSError, ValueError, TypeError, HTTPError, URLError) as exc:
+            errors.append("STAGED_NOT_VERIFIED: " + target["repo"] + "/" +
+                          target["path"] + ": " + str(exc).splitlines()[0])
+    for entry in plan["adoptions"]:
+        checked += 1
+        try:
+            payload = fetch(entry["repo"], entry["commit"], entry["pin_path"])
+            if not isinstance(payload, bytes):
+                raise TypeError("staged pin reader did not return bytes")
+            pin = json.loads(payload.decode("utf-8"))
+            if not isinstance(pin, dict) or any([
+                    pin.get("source_repo") != owner["repo"],
+                    pin.get("source_commit") != owner["commit"],
+                    pin.get("source_path") != owner["path"],
+                    pin.get("source_git_blob_sha1") != owner["sha1"]]):
+                errors.append("STAGED_PIN_MISMATCH: " + entry["repo"])
+        except (OSError, ValueError, TypeError, UnicodeError,
+                json.JSONDecodeError, HTTPError, URLError) as exc:
+            errors.append("STAGED_PIN_NOT_VERIFIED: " + entry["repo"] +
+                          ": " + str(exc).splitlines()[0])
+    return checked, errors
+
+
+def read_public_immutable(repo, commit, path):
+    """Read source from a reviewed public repository at an immutable SHA."""
+    if not isinstance(repo,str) or repo not in STAGED_PUBLIC_REPOS or (
+            not isinstance(commit,str) or not SHA_RE.fullmatch(commit)):
+        raise ValueError("unreviewed staged source or mutable git ref")
+    url = ("https://raw.githubusercontent.com/" + quote(repo, safe="/")
+           + "/" + commit + "/" + quote(path, safe="/"))
+    last = None
+    for attempt in range(3):
+        try:
+            with urlopen(url, timeout=12) as response:
+                # Shared source and tiny pin JSON only, never artifacts.
+                return response.read(1_000_001)
+        except (OSError, HTTPError, URLError) as exc:
+            last = exc
+            if attempt < 2:
+                time.sleep(1 + attempt)
+    raise OSError("immutable public source GET failed: " + str(last))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true", help="verify public main blobs")
+    parser.add_argument("--staged", action="store_true", help="verify immutable public draft source pins")
     args = parser.parse_args()
+    if args.live and args.staged:
+        parser.error("choose one public source qualification mode")
+    if args.staged:
+        staged = json.loads(STAGED_ROLLOUT.read_text(encoding="utf-8"))
+        count, errors = check_staged_rollout(staged, read_public_immutable)
+        if errors:
+            for error in errors:
+                print("FAIL:", error, file=sys.stderr)
+            print(f"FAIL: immutable draft source rollout ({len(errors)}/{count})")
+            return 1
+        print(f"PASS: STAGED_IMMUTABLE_SOURCE_CHAIN verified={count} (not deployed main)")
+        return 0
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     validate_registry(registry)
     if not args.live:

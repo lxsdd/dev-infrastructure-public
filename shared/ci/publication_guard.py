@@ -12,15 +12,24 @@ import json
 import re
 from pathlib import Path
 
-UPLOAD = re.compile(r"^\s*(?:-\s*)?uses:\s*actions/upload-artifact@", re.I)
+UPLOAD = re.compile(r"""^\s*(?:-\s*)?uses:\s*[\'"]?actions/upload-artifact@""", re.I)
 RELEASE_ACTION = re.compile(
-    r"^\s*(?:-\s*)?uses:\s*(?:softprops/action-gh-release|actions/create-release)@", re.I
+    r"""^\s*(?:-\s*)?uses:\s*[\'"]?(?:softprops/action-gh-release|actions/create-release)@""", re.I
 )
 RELEASE_CLI = re.compile(r"\bgh\s+release\s+(?:create|upload)\b", re.I)
 INDENT_JOB = re.compile(r"^  ([A-Za-z_][A-Za-z_0-9-]*):(?:\s*#.*)?\s*$")
 FALSE_IF = re.compile(r"^if:\s*false(?:\s*#.*)?$", re.I)
 STEP = re.compile(r"^-\s+(?:uses:|name:|run:)", re.I)
 DYNAMIC_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*.*\$\{\{", re.I)
+ALIAS_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*[*&]", re.I)
+# Noncanonical YAML scalar/key forms can hide an enabled upload/release action
+# from the deliberately lightweight canonical `uses:` matcher. Reject them,
+# rather than incorrectly certifying a source-only workflow as safe.
+BLOCK_SCALAR_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*[>|]", re.I)
+TAGGED_USES = re.compile(r"^\s*(?:-\s*)?uses:\s*!", re.I)
+QUOTED_USES_KEY = re.compile(r"""^\s*(?:-\s*)?['"]uses['"]\s*:""", re.I)
+SPACED_USES_KEY = re.compile(r"^\s*(?:-\s*)?uses\s+:", re.I)
+FLOW_STEP_MAPPING = re.compile(r"^\s*-\s*\{")
 
 
 def _level(row: str) -> int:
@@ -100,8 +109,14 @@ def scan_workflows(
                 continue
             if "\t" in row[:_level(row) + 1]:
                 errors.append(f"{name}:{index + 1}: tab indentation")
+            if (BLOCK_SCALAR_USES.search(row) or TAGGED_USES.search(row)
+                    or QUOTED_USES_KEY.search(row) or SPACED_USES_KEY.search(row)
+                    or FLOW_STEP_MAPPING.search(row)):
+                errors.append(f"{name}:{index + 1}: noncanonical YAML action key/scalar is not safely auditable")
             if DYNAMIC_USES.search(row):
                 errors.append(f"{name}:{index + 1}: dynamic action reference")
+            if ALIAS_USES.search(row):
+                errors.append(f"{name}:{index + 1}: YAML action alias/anchor is not safely auditable")
             if UPLOAD.search(row):
                 observed[name] = observed.get(name, 0) + 1
                 if not _disabled(lines, index):

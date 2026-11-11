@@ -1,0 +1,27 @@
+name: Synthetic Windows interactive desktop capability probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/synthetic-windows-graphics-probe.ps1
+      - scripts/windows-ui-geometry.ps1
+      - scripts/windows-ui-accessibility.ps1
+      - .github/workflows/synthetic-graphics-probe.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-graphics-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-graphics-probe:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify synthetic Windows session without saving images
+        shell: powershell
+        run: ./scripts/synthetic-windows-graphics-probe.ps1

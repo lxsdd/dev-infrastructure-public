@@ -1,0 +1,76 @@
+name: Pinned real WPF product window UIA probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/real-wpf-product-probe.ps1
+      - scripts/windows-ui-accessibility.ps1
+      - .github/workflows/real-wpf-product-probe.yml
+permissions:
+  contents: read
+concurrency:
+  group: real-wpf-visual-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pinned-real-window:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout exact qualified public product source (no secrets or user files)
+        uses: actions/checkout@v4
+        with:
+          repository: lxsdd/rekordbox-mytag-sync
+          ref: 6974bdd603908adebd17031302244feaa100ae78
+          path: product
+          persist-credentials: false
+      - name: Verify preinstalled .NET 10 Windows SDK on hosted runner
+        shell: pwsh
+        run: |
+          dotnet --list-sdks
+          if (-not ((dotnet --list-sdks) -match '^10[.]0[.]')) { throw 'This Windows image needs .NET 10 SDK.' }
+      - name: Restore pinned product lockfile and build WPF
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # dotnet selects global.json from the CURRENT DIRECTORY, not the project path.
+          # Honor the product's immutable 10.0.402 SDK and locked NuGet graph.
+          $exactSdk = '10.0.402'
+          $foundSdk = @(dotnet --list-sdks | Where-Object { $_ -match '^10[.]0[.]402\s' })
+          if ($foundSdk.Count -eq 0) {
+            # The hosted Windows image can contain other 10.0.4xx builds
+            # across matrix jobs. Restore the exact product SDK in RUNNER_TEMP,
+            # never patch the repository global.json or its NuGet lockfile.
+            $installer = Join-Path $env:RUNNER_TEMP 'dotnet-install-exact.ps1'
+            $sdkDir = Join-Path $env:RUNNER_TEMP 'pinned-dotnet-sdk'
+            Invoke-WebRequest -UseBasicParsing -MaximumRedirection 5 -Uri 'https://raw.githubusercontent.com/dotnet/install-scripts/e5cf1dd2d1540ed05ac84f8eb8c5cdec2807621e/src/dotnet-install.ps1' -OutFile $installer
+            & $installer -Version $exactSdk -InstallDir $sdkDir -NoPath
+            if (-not (Test-Path -LiteralPath (Join-Path $sdkDir 'dotnet.exe') -PathType Leaf)) { throw 'Exact temporary SDK installation did not produce dotnet.exe.' }
+            $env:PATH = "$sdkDir;$env:PATH"
+            $env:DOTNET_ROOT = $sdkDir
+            Write-Host 'SDK_EXACT_FALLBACK=RUNNER_TEMP'
+          } else {
+            Write-Host 'SDK_EXACT_FALLBACK=NOT_REQUIRED'
+          }
+          Push-Location 'product'
+          try {
+            $sdk = dotnet --version
+            Write-Host "PINNED_PRODUCT_DOTNET_SDK=$sdk"
+            if ($sdk -ne '10.0.402') { throw 'Pinned product global.json SDK 10.0.402 not honored.' }
+            $p = 'src/RekordboxMyTagSync/RekordboxMyTagSync.csproj'
+            dotnet restore $p -r win-x64 --locked-mode
+            if ($LASTEXITCODE -ne 0) { throw 'Pinned source locked restore failed.' }
+            dotnet build $p -c Release --no-restore
+            if ($LASTEXITCODE -ne 0) { throw 'Pinned source WPF build failed.' }
+          } finally { Pop-Location }
+      - name: Observe real WPF window, accessibility and keyboard focus
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'product/src/RekordboxMyTagSync/bin/Release/net10.0-windows/win-x64/rekordbox MyTagSync.exe'
+          Write-Host 'WINDOW_CASE=qualified-current-secured-compact-main'
+          & ./scripts/real-wpf-product-probe.ps1 -ProductExe $exe -RequireWindowFits
+          if (-not $?) { throw 'Real WPF window probe failed.' }

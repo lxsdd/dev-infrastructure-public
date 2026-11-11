@@ -1,0 +1,101 @@
+name: Stage original foobar2000 installers for owner review (manual, draft-only)
+
+# NEVER invoked by a pull request or push. Does not publish a release.
+on:
+  workflow_dispatch:
+    inputs:
+      owner_approval:
+        description: Type CREATE_DRAFT_ONLY after explicitly approving a one-time, original-byte upstream GitHub mirror
+        required: true
+        type: choice
+        default: DO_NOT_STAGE
+        options:
+          - DO_NOT_STAGE
+          - CREATE_DRAFT_ONLY
+
+permissions:
+  contents: write
+
+jobs:
+  stage-original-installers:
+    if: >-
+      github.repository == 'lxsdd/dev-infrastructure-public' &&
+      github.actor == 'lxsdd' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.owner_approval == 'CREATE_DRAFT_ONLY'
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - name: Verify exact official upstream installers once, fail closed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'foobar-owner-reviewed-upstream'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $required=@(
+            @{
+              name='foobar2000_v2.26.1.exe'
+              url='https://www.foobar2000.org/files/foobar2000_v2.26.1.exe'
+              sha='849bc4424326da81049746e9a2255a3a707e56b76cc69ed11714ed23c69ece52'
+            },
+            @{
+              name='foobar2000-x64_v2.26.1.exe'
+              url='https://www.foobar2000.org/files/foobar2000-x64_v2.26.1.exe'
+              sha='72fe15a88b085ee4e49d68114e2bb9655000c2e0fdf40dcc128bbef8bcaf3600'
+            }
+          )
+          foreach ($item in $required) {
+            $dest=Join-Path $root $item.name
+            # One attempt per original URL. Never retry an unavailable server
+            # excessively, never fall back to unsigned third-party mirrors.
+            try {
+              Invoke-WebRequest -Uri $item.url -OutFile $dest -TimeoutSec 50 -ErrorAction Stop
+            } catch {
+              Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
+              throw "HOST_ORIGINAL_DOWNLOAD_UNAVAILABLE: $($item.name); no release was created"
+            }
+            $found=(Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($found -cne $item.sha) {
+              throw "HOST_ORIGINAL_HASH_MISMATCH: $($item.name); refusing release"
+            }
+            if ((Get-Item -LiteralPath $dest).Length -lt 1000000) {
+              throw "HOST_ORIGINAL_FILE_TOO_SMALL: $($item.name); refusing release"
+            }
+            Write-Host "UPSTREAM_ORIGINAL_EXE_$($item.name)=VERIFIED_SHA256"
+          }
+          $envPath=Join-Path $env:RUNNER_TEMP 'foobar-stage-path.txt'
+          [IO.File]::WriteAllText($envPath,$root)
+      - name: Create a PRIVATE REVIEW DRAFT only (no publish, no component binaries)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='foobar-ci-upstream-v2.26.1'
+          & gh release view $tag --json id 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            throw 'A dependency release with this exact tag already exists. Refusing to overwrite.'
+          }
+          $root=[IO.File]::ReadAllText((Join-Path $env:RUNNER_TEMP 'foobar-stage-path.txt')).Trim()
+          $x86=Join-Path $root 'foobar2000_v2.26.1.exe'
+          $x64=Join-Path $root 'foobar2000-x64_v2.26.1.exe'
+          if (-not (Test-Path $x86) -or -not (Test-Path $x64)) {
+            throw 'Both immutable original installers required; refusing draft release.'
+          }
+          $notes=@'
+          ## Third-party upstream CI dependency — not our own foobar release
+          This review draft contains only the original UNMODIFIED official foobar2000 2.26.1 installers for Win32 and x64, redistributed under https://www.foobar2000.org/license.
+          Copyright (c) Peter Pawlowski; installer script and icons (c) Janne Hyvärinen. No author or contributor endorsement is implied.
+          No foobar program files, repackaged portable binaries, third-party plugins, user files or our component DLLs are distributed.
+
+          x86 foobar2000_v2.26.1.exe SHA256 849bc4424326da81049746e9a2255a3a707e56b76cc69ed11714ed23c69ece52
+          x64 foobar2000-x64_v2.26.1.exe SHA256 72fe15a88b085ee4e49d68114e2bb9655000c2e0fdf40dcc128bbef8bcaf3600
+
+          IMPORTANT: a DRAFT is not published or a CI test PASS. Explicit owner release approval, actual GitHub asset re-download/hash verification and native Win32/x64 host qualification remain mandatory.
+          '@
+          & gh release create $tag $x86 $x64 --repo $env:GH_REPO --draft --title 'Third-party foobar2000 2.26.1 original installers (CI dependency)' --notes $notes --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to create complete draft upstream installer dependency release'
+          }
+          Write-Host 'UPSTREAM_GITHUB_DEPENDENCY_RELEASE=DRAFT_ONLY_UNPUBLISHED'

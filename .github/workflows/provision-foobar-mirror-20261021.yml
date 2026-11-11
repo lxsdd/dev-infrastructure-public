@@ -1,0 +1,113 @@
+name: One-time original foobar2000 installer mirror (owner authorized 2026-10-21)
+
+# The repository owner explicitly requested a CENTRAL, publicly readable
+# dependency copy of the two unchanged original foobar2000 2.26.1 installers.
+# This narrowly scoped, one-time push event is NOT a reusable product CI
+# workflow. It cannot be invoked by external pull requests or fork code.
+on:
+  push:
+    branches:
+      - work/foobar-dual-host-20261020
+    paths:
+      - .github/workflows/provision-foobar-mirror-20261021.yml
+
+permissions:
+  contents: write
+
+jobs:
+  provision-upstream-originals:
+    if: >-
+      github.repository == 'lxsdd/dev-infrastructure-public' &&
+      github.actor == 'lxsdd' &&
+      github.ref == 'refs/heads/work/foobar-dual-host-20261020'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Download each exact original, check immutable upstream winget hashes, then publish once
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          tag='foobar-ci-upstream-v2.26.1'
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo 'RELEASE_ALREADY_EXISTS=STOP: never overwrite upstream installer bytes'
+            exit 1
+          fi
+          temp="$(mktemp -d)"
+          trap 'rm -rf "$temp"' EXIT
+          # Independent source of original expected SHA256:
+          # microsoft/winget-pkgs PeterPawlowski.foobar2000 2.26.1
+          # https://github.com/microsoft/winget-pkgs/blob/master/manifests/p/PeterPawlowski/foobar2000/2.26.1/PeterPawlowski.foobar2000.installer.yaml
+          names=('foobar2000_v2.26.1.exe' 'foobar2000-x64_v2.26.1.exe')
+          sums=('849bc4424326da81049746e9a2255a3a707e56b76cc69ed11714ed23c69ece52' '72fe15a88b085ee4e49d68114e2bb9655000c2e0fdf40dcc128bbef8bcaf3600')
+          # VideoHelp already lists both exact final original installers from
+          # 2026-10-09 and has cached copies independently of foobar2000.org.
+          # Hash is mandatory and stronger than trusting this mirror.
+          for idx in 0 1; do
+            name="${names[$idx]}"
+            expected="${sums[$idx]}"
+            output="$temp/$name"
+            url="https://www.videohelp.com/download/$name?r=gxlQhvGW"
+            echo "Checking source $name; not calling the intentionally offline vendor"
+            curl --fail --location --silent --show-error --max-time 100 \
+              --retry 0 --user-agent 'Mozilla/5.0 (compatible; foobar-ci-dependency/1.0)' \
+              --referer "https://www.videohelp.com/software?d=$name" \
+              --output "$output" "$url"
+            size="$(wc -c < "$output")"
+            if (( size < 5000000 || size > 20000000 )); then
+              echo "ORIGINAL_SIZE_INVALID $name $size"; exit 1
+            fi
+            magic="$(head -c 2 "$output" | od -An -tx1 | tr -d '[:space:]')"
+            if [[ "$magic" != '4d5a' ]]; then
+              echo "ORIGINAL_PE_MZ_INVALID $name"; exit 1
+            fi
+            actual="$(sha256sum "$output" | cut -d' ' -f1)"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "ORIGINAL_SHA256_MISMATCH $name actual=$actual expected=$expected"; exit 1
+            fi
+            echo "UPSTREAM_ORIGINAL_$name=VERIFIED_SHA256 $expected"
+          done
+          cat > "$temp/release-notes.md" <<'NOTES'
+          # Third-party ORIGINAL foobar2000 2.26.1 installers for our CI
+
+          This release hosts the two original, byte-for-byte UNMODIFIED official
+          Windows foobar2000 2.26.1 installer EXE files as upstream development
+          dependencies for native Win32/x64 foobar2000 component testing.
+
+          Original publisher: Peter Pawlowski, https://www.foobar2000.org/
+          License: https://www.foobar2000.org/license
+          foobar2000 is not made or endorsed by lxsdd.
+          No extracted/repacked program files, component DLLs, user files, SDK
+          bundle or personal metadata are contained in this dependency release.
+
+          Checksums against Microsoft's official winget package manifest:
+          - foobar2000_v2.26.1.exe SHA256 849bc4424326da81049746e9a2255a3a707e56b76cc69ed11714ed23c69ece52
+          - foobar2000-x64_v2.26.1.exe SHA256 72fe15a88b085ee4e49d68114e2bb9655000c2e0fdf40dcc128bbef8bcaf3600
+
+          Installer bytes came from the archived VideoHelp download entries
+          and were admitted ONLY after an exact 256-bit original-file hash
+          match against Microsoft's independently published 2026-10-09 winget
+          manifest. Original vendor download site was offline due to security
+          maintenance when this mirror was initially provisioned.
+          NOTES
+          gh release create "$tag" "$temp/${names[0]}" "$temp/${names[1]}" \
+            --repo "$GH_REPO" --title 'foobar2000 2.26.1 original CI installers' \
+            --notes-file "$temp/release-notes.md" --latest=false
+          # Verify that GitHub, not our local staging directory, is serving
+          # the exact immutable EXE bytes. Never claim success on upload alone.
+          for idx in 0 1; do
+            name="${names[$idx]}"
+            expected="${sums[$idx]}"
+            url="https://github.com/$GH_REPO/releases/download/$tag/$name"
+            curl --fail --location --silent --show-error \
+              --retry 3 --retry-delay 2 --max-time 120 \
+              --output "$temp/verify-$name" "$url"
+            actual="$(sha256sum "$temp/verify-$name" | cut -d' ' -f1)"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "GITHUB_MIRROR_REDOWNLOAD_HASH_FAILED $name"; exit 1
+            fi
+            echo "GITHUB_MIRROR_$name=SHA256_VERIFIED"
+          done
+          echo 'FOOBAR_CI_UPSTREAM_MIRROR_PROVISIONED=PASS'

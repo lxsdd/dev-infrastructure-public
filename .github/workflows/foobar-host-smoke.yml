@@ -1,0 +1,122 @@
+name: Shared foobar2000 x86/x64 host baseline
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/actions/foobar-host-smoke/**"
+      - ".github/actions/foobar-sdk-source/**"
+      - ".github/workflows/foobar-host-smoke.yml"
+      - "docs/FOOBAR-HOST-MATRIX.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foobar-host-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-sdk-tree-contract:
+    # Uses the independently pinned owner Git source, never foobar2000.org.
+    # Stages source only inside the ephemeral Windows CI machine.
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify PowerShell source syntax without network
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location) '.github/actions/foobar-sdk-source/sdk-source.ps1'),
+            [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw ($errors | Out-String) }
+      - name: Install pinned SDK Git source under temporary runner path
+        uses: ./.github/actions/foobar-sdk-source
+        with:
+          sdk-root: ${{ runner.temp }}/foobar2000-sdk-2026-10-01
+      - uses: microsoft/setup-msbuild@v2
+      - name: Compile pinned official SDK core with MSVC Win32 and x64 without vendor download
+        shell: pwsh
+        run: |
+          $sdk=Join-Path $env:RUNNER_TEMP 'foobar2000-sdk-2026-10-01'
+          foreach ($platform in @('Win32','x64')) {
+            foreach ($project in @('pfc/pfc.vcxproj','foobar2000/SDK/foobar2000_SDK.vcxproj')) {
+              $projectPath=Join-Path $sdk $project
+              & msbuild.exe $projectPath /t:Build /p:Configuration=Release "/p:Platform=$platform" /p:PlatformToolset=v143 /m:2 /v:minimal /nologo
+              if ($LASTEXITCODE -ne 0) {
+                throw "Exact pinned SDK source MSVC compilation failed: $platform $project"
+              }
+            }
+            Write-Host "PINNED_SDK_SOURCE_MSVC_$platform=PASS"
+          }
+      - name: Reject replacing preexisting pinned SDK tree
+        shell: pwsh
+        run: |
+          $path=Join-Path $env:RUNNER_TEMP 'foobar2000-sdk-2026-10-01'
+          foreach ($relative in @('sdk-license.txt','sdk-readme.html','foobar2000/shared/shared-Win32.lib','foobar2000/shared/shared-x64.lib')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $path $relative) -PathType Leaf)) {
+              throw "Verified pinned SDK output missing $relative"
+            }
+          }
+          $denied=$false
+          try {
+            & ./.github/actions/foobar-sdk-source/sdk-source.ps1 -SdkRoot $path
+          } catch { $denied=$true }
+          if (-not $denied) { throw 'Unchecked SDK overwrite unexpectedly accepted' }
+          Write-Host 'PASS: exact owner Git tree SDK source staged and guarded against overwrite'
+
+  installer-cache-contract:
+    # All test bytes are synthetic and local. Vendor reachability is NOT
+    # needed to prove integrity, cache hit, tamper and partial cleanup.
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse shared installer helper and native host scripts
+        shell: pwsh
+        run: |
+          foreach ($file in @(
+            '.github/actions/foobar-host-smoke/pinned-installer-cache.ps1',
+            '.github/actions/foobar-host-smoke/host-smoke.ps1',
+            '.github/actions/foobar-host-smoke/tests/installer-cache-tests.ps1'
+          )) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path (Get-Location) $file), [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { throw ("$file`n"+($errors | Out-String)) }
+          }
+      - name: Test pinned job-local installer cache without network or installer
+        shell: pwsh
+        run: ./.github/actions/foobar-host-smoke/tests/installer-cache-tests.ps1
+
+  official-host-boot:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed on malformed host PowerShell
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path (Get-Location) '.github/actions/foobar-host-smoke/host-smoke.ps1'),
+            [ref]$tokens, [ref]$errors)
+          if ($errors.Count) { throw ($errors | Out-String) }
+      - name: Test synthetic WAVE fixture guards before installing hosts
+        shell: pwsh
+        run: ./.github/actions/foobar-host-smoke/tests/fixture-tests.ps1
+      - name: Test synthetic external CUE creation and mutation guards
+        shell: pwsh
+        run: ./.github/actions/foobar-host-smoke/tests/cue-fixture-tests.ps1
+      - name: Start verified official foobar2000 host ${{ matrix.architecture }}
+        uses: ./.github/actions/foobar-host-smoke
+        with:
+          architecture: ${{ matrix.architecture }}

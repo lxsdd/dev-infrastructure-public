@@ -12,7 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 REPO = "lxsdd/foo_discogger"
-PRODUCT_BRANCH = "fix/discogger-optional-fallback-failure-20261026"
+PRODUCT_BRANCH = "chat/discogger-release-parser-20261103"
 REQUIRED = {"portable-core", "windows-baseline", "windows-native-unit (x86)",
             "windows-native-unit (x64)", "official-sdk-probe"}
 WORKFLOWS = [
@@ -132,7 +132,7 @@ def read_target(root):
     path = root / "contracts/discogger-reviewed-native-source.json"
     target = json.loads(path.read_text(encoding="utf-8"))
     if (not isinstance(target, dict) or target.get("schema_version") != 1 or
-        target.get("source_repository") != REPO or target.get("source_pr") != 23 or
+        target.get("source_repository") != REPO or target.get("source_pr") != 26 or
         target.get("source_branch") != PRODUCT_BRANCH or
         not SHA.fullmatch(target.get("source_sha", "")) or
         type(target.get("qualified_push_run_id")) is not int or

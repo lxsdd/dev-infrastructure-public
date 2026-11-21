@@ -87,9 +87,16 @@ jobs:
           $ErrorActionPreference='Stop'
           if((& git -C discogger rev-parse HEAD).Trim() -cne '11cee388cc271262afcb9e16e615a9f3a0cc8a10'){throw 'Discogger source drift'}
           if((& git -C metadata rev-parse HEAD).Trim() -cne 'a027ef885c803a1b1216c62c8a4d6190a19cd833'){throw 'Metadata Isolation source drift'}
-          & python discogger/tests/source_contracts.py
-          if($LASTEXITCODE -ne 0){throw 'Discogger protected runner gate regression'}
-          & python metadata/scripts/verify-public-artifact-hold.py
+      - name: Check Discogger source contracts in product checkout
+        shell: pwsh
+        working-directory: discogger
+        run: python tests/source_contracts.py
+      - name: Check Metadata Isolation artifact policy in companion checkout
+        shell: pwsh
+        working-directory: metadata
+        run: |
+          $ErrorActionPreference='Stop'
+          & python scripts/verify-public-artifact-hold.py
           if($LASTEXITCODE -ne 0){throw 'Metadata Isolation public artifact gate regression'}
           Write-Host 'PROTECTED_NATIVE_GUI_SOURCE_PINS=PASS'
       - name: Stage verified Discogger dependencies and build Win32/x64 QA-only DLLs

@@ -3,8 +3,8 @@
   "source_repository": "lxsdd/foo_discogger",
   "source_pr": 26,
   "source_branch": "chat/discogger-release-parser-20261103",
-  "source_sha": "11cee388cc271262afcb9e16e615a9f3a0cc8a10",
-  "qualified_push_run_id": 44946243770,
+  "source_sha": "7f9204df0030aff56915dab08d20d20045e6252e",
+  "qualified_push_run_id": 45043460838,
   "source_ci": "EXACT_SHA_NATIVE_WIN32_X64_HOST_PASS_44946243770",
   "protected_native_oauth": "PENDING_PROTECTED_MAIN_ONLY",
   "required_releases": [

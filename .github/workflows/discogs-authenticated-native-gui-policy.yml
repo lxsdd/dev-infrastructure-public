@@ -32,6 +32,12 @@ jobs:
           from pathlib import Path
           src = Path('.github/workflows/discogs-authenticated-native-gui.yml').read_text()
           trigger = src.split('jobs:', 1)[0]
+          import yaml
+          steps = yaml.safe_load(src)['jobs']['authenticated-native-gui']['steps']
+          contract_steps = [s for s in steps if 'tests/source_contracts.py' in s.get('run', '')]
+          assert len(contract_steps) == 1
+          assert contract_steps[0].get('working-directory') == 'discogger'
+          assert contract_steps[0]['run'].strip() == 'python tests/source_contracts.py'
           assert '  pull_request:' not in trigger
           assert '  workflow_dispatch:' in trigger
           assert '    branches: [main]' in trigger
